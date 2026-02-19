@@ -497,6 +497,8 @@ class PDFHeaderApp:
         self._draw_overlay()
 
     def _draw_overlay(self, hover_cx=None, hover_cy=None):
+        if not hasattr(self, "canvas"):
+            return
         self.canvas.delete("overlay")
 
         # Croix de guidage
