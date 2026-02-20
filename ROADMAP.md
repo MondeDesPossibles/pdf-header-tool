@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.0.1
-# Build   : build-2026.02.20.16
+# Version : 0.2.0
+# Build   : build-2026.02.20.17
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -49,28 +49,26 @@ Chaque étape doit être validée avant de passer à la suivante.
 ---
 
 ## Étape 1 — Migration CustomTkinter
-**Statut : À faire**
-**Version cible : 0.1.0**
+**Statut : Terminé ✓**
+**Version livrée : 0.1.0**
 
 Remplacer tkinter par CustomTkinter pour un rendu moderne.
 
-- Remplacer `import tkinter as tk` par `import customtkinter as ctk`
-- Remplacer `tk.Tk()` par `ctk.CTk()`
+- Remplacer `import tkinter as tk` par `import customtkinter as ctk` ✓
+- Remplacer `tk.Tk()` par `ctk.CTk()` ✓
 - Remplacer tous les widgets tk par leurs équivalents ctk
-  (`ctk.CTkFrame`, `ctk.CTkLabel`, `ctk.CTkButton`, `ctk.CTkRadioButton`, etc.)
-- Remplacer `tk.Spinbox` → `ctk.CTkEntry` avec validation numérique
-  (CustomTkinter n'a pas de Spinbox natif)
-- Garder `tk.Canvas` pour la prévisualisation PDF
-  (CustomTkinter n'a pas de canvas, on mixe les deux)
+  (`ctk.CTkFrame`, `ctk.CTkLabel`, `ctk.CTkButton`, `ctk.CTkRadioButton`, etc.) ✓
+- Remplacer `tk.Spinbox` → `ctk.CTkEntry` avec validation numérique ✓
+- Garder `tk.Canvas` pour la prévisualisation PDF ✓
 - Définir un thème global : `ctk.set_appearance_mode("dark")`
-  et `ctk.set_default_color_theme("blue")`
-- Ajouter `customtkinter` à la liste des dépendances dans `_bootstrap()`
+  et `ctk.set_default_color_theme("blue")` ✓
+- Ajouter `customtkinter` à la liste des dépendances dans `_bootstrap()` ✓
 
 ---
 
 ## Étape 2 — Écran d'accueil avec choix fichier / dossier
-**Statut : À faire — dépend de l'Étape 1**
-**Version cible : 0.2.0**
+**Statut : Terminé ✓**
+**Version livrée : 0.2.0**
 
 Remplacer la boîte de dialogue automatique au lancement par un écran d'accueil
 intégré dans la fenêtre principale.

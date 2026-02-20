@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
-# Version : 0.0.1
-# Build   : build-2026.02.20.16
+# Version : 0.2.0
+# Build   : build-2026.02.20.17
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.0.1"
-BUILD_ID    = "build-2026.02.20.16"
+VERSION     = "0.2.0"
+BUILD_ID    = "build-2026.02.20.17"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -134,6 +134,10 @@ def _check_update_thread():
         with urllib.request.urlopen(req2, timeout=15) as r:
             new_content = r.read()
 
+        # Valider que le contenu téléchargé est du Python syntaxiquement correct
+        import ast
+        ast.parse(new_content.decode())
+
         # Écrire dans un fichier temporaire puis remplacer
         script_path = Path(__file__).resolve()
         tmp = script_path.with_suffix(".tmp")
@@ -167,9 +171,9 @@ ctk.set_default_color_theme("blue")
 # Application principale
 # ---------------------------------------------------------------------------
 class PDFHeaderApp:
-    def __init__(self, root, pdf_files):
+    def __init__(self, root, pdf_files=None):
         self.root      = root
-        self.pdf_files = pdf_files
+        self.pdf_files = list(pdf_files) if pdf_files else []
         self.idx       = 0
         self.cfg       = load_config()
 
@@ -190,7 +194,11 @@ class PDFHeaderApp:
 
         self._build_ui()
         self.root.update_idletasks()
-        self._load_pdf()
+
+        if self.pdf_files:
+            self._load_pdf()
+        else:
+            self._show_welcome_screen()
 
     # ------------------------------------------------------------------ UI ---
 
@@ -227,21 +235,22 @@ class PDFHeaderApp:
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
+        self._sidebar_interactive = []
         self._build_sidebar(sidebar)
 
         # ── Canvas ──
-        canvas_frame = ctk.CTkFrame(body, fg_color="#141418", corner_radius=0)
-        canvas_frame.pack(side="left", fill="both", expand=True)
+        self.canvas_frame = ctk.CTkFrame(body, fg_color="#141418", corner_radius=0)
+        self.canvas_frame.pack(side="left", fill="both", expand=True)
 
         self.hint_lbl = ctk.CTkLabel(
-            canvas_frame,
+            self.canvas_frame,
             text="Cliquez sur la page pour positionner l'en-tête",
             fg_color="#111116", text_color="#888888",
             font=("Segoe UI", 9), corner_radius=0
         )
         self.hint_lbl.pack(side="top", pady=8, fill="x")
 
-        self.canvas = tk.Canvas(canvas_frame, bg="#141418",
+        self.canvas = tk.Canvas(self.canvas_frame, bg="#141418",
                                 cursor="crosshair", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Button-1>", self._on_click)
@@ -258,19 +267,19 @@ class PDFHeaderApp:
                                        font=("Courier New", 10))
         self.lbl_coords.pack(side="left", padx=14)
 
-        btn_apply = ctk.CTkButton(bottom, text="✓  Appliquer",
+        self.btn_apply = ctk.CTkButton(bottom, text="✓  Appliquer",
                                   fg_color="#55bb77", text_color="#0a1a0f",
                                   hover_color="#44aa66",
                                   font=("Segoe UI", 11, "bold"),
                                   command=self._apply)
-        btn_apply.pack(side="right", padx=10, pady=8)
+        self.btn_apply.pack(side="right", padx=10, pady=8)
 
-        btn_skip = ctk.CTkButton(bottom, text="→  Passer",
+        self.btn_skip = ctk.CTkButton(bottom, text="→  Passer",
                                  fg_color="#2a2a35", text_color="#aaaaaa",
                                  hover_color="#3a3a4a",
                                  font=("Segoe UI", 11),
                                  command=self._skip)
-        btn_skip.pack(side="right", padx=4, pady=8)
+        self.btn_skip.pack(side="right", padx=4, pady=8)
 
     def _build_sidebar(self, parent):
         cfg = self.cfg
@@ -301,6 +310,7 @@ class PDFHeaderApp:
                                     font=("Segoe UI", 10),
                                     command=self._on_mode_change)
             rb.pack(anchor="w", padx=14, pady=1)
+            self._sidebar_interactive.append(rb)
 
         # Champs de saisie
         self.var_prefixe = tk.StringVar(value=cfg.get("prefixe", ""))
@@ -354,16 +364,20 @@ class PDFHeaderApp:
                                   text_color="#dddddd",
                                   command=lambda: self._change_size(-1))
         btn_minus.pack(side="left", padx=(0, 2))
+        self._sidebar_interactive.append(btn_minus)
         self.var_size = tk.IntVar(value=cfg.get("font_size", 8))
-        ctk.CTkEntry(size_row, textvariable=self.var_size,
+        size_entry = ctk.CTkEntry(size_row, textvariable=self.var_size,
                      width=46, fg_color="#2a2a35", text_color="#dddddd",
                      border_color="#3a3a4a",
-                     font=("Courier New", 10)).pack(side="left")
+                     font=("Courier New", 10))
+        size_entry.pack(side="left")
+        self._sidebar_interactive.append(size_entry)
         btn_plus = ctk.CTkButton(size_row, text="+", width=30, height=26,
                                  fg_color="#2a2a35", hover_color="#3a3a4a",
                                  text_color="#dddddd",
                                  command=lambda: self._change_size(1))
         btn_plus.pack(side="left", padx=(2, 0))
+        self._sidebar_interactive.append(btn_plus)
         ctk.CTkLabel(size_row, text="pts",
                      fg_color="transparent", text_color="#666677",
                      font=("Segoe UI", 9)).pack(side="left", padx=4)
@@ -381,6 +395,7 @@ class PDFHeaderApp:
                                     text_color="#dddddd",
                                     font=("Segoe UI", 10))
             rb.pack(anchor="w", pady=1)
+            self._sidebar_interactive.append(rb)
 
         # ── Position mémorisée ──
         section("POSITION MÉMORISÉE")
@@ -401,13 +416,88 @@ class PDFHeaderApp:
     def _make_entry(self, parent, var, placeholder):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.pack(fill="x", padx=28, pady=1)
-        ctk.CTkEntry(frame, textvariable=var,
+        entry = ctk.CTkEntry(frame, textvariable=var,
                      placeholder_text=placeholder,
                      placeholder_text_color="#555566",
                      fg_color="#2a2a35", text_color="#dddddd",
                      border_color="#3a3a4a",
-                     font=("Courier New", 9)).pack(fill="x")
+                     font=("Courier New", 9))
+        entry.pack(fill="x")
+        self._sidebar_interactive.append(entry)
         return frame
+
+    # --------------------------------------------------- Écran d'accueil ---
+
+    def _show_welcome_screen(self):
+        self.welcome_frame = ctk.CTkFrame(self.canvas_frame, fg_color="#141418", corner_radius=0)
+        self.welcome_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        ctk.CTkFrame(self.welcome_frame, fg_color="transparent", height=120).pack()
+
+        ctk.CTkLabel(self.welcome_frame, text="PDF HEADER TOOL",
+                     fg_color="transparent", text_color="#e05555",
+                     font=("Courier New", 18, "bold")).pack(pady=(0, 8))
+
+        ctk.CTkLabel(self.welcome_frame,
+                     text="Choisissez les fichiers PDF à traiter",
+                     fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 11)).pack(pady=(0, 40))
+
+        btn_row = ctk.CTkFrame(self.welcome_frame, fg_color="transparent")
+        btn_row.pack()
+
+        ctk.CTkButton(btn_row, text="📄  Ouvrir des fichiers",
+                      width=200, height=50,
+                      fg_color="#2a3a5a", hover_color="#3a4a6a",
+                      text_color="#aac4ff", font=("Segoe UI", 12),
+                      command=self._open_files).pack(side="left", padx=16)
+
+        ctk.CTkButton(btn_row, text="📁  Ouvrir un dossier",
+                      width=200, height=50,
+                      fg_color="#2a3a5a", hover_color="#3a4a6a",
+                      text_color="#aac4ff", font=("Segoe UI", 12),
+                      command=self._open_folder).pack(side="left", padx=16)
+
+        self._set_ui_state(False)
+
+    def _hide_welcome_screen(self):
+        if hasattr(self, "welcome_frame") and self.welcome_frame.winfo_exists():
+            self.welcome_frame.destroy()
+        self._set_ui_state(True)
+
+    def _set_ui_state(self, enabled: bool):
+        state = "normal" if enabled else "disabled"
+        self.btn_apply.configure(state=state)
+        self.btn_skip.configure(state=state)
+        for w in self._sidebar_interactive:
+            try:
+                w.configure(state=state)
+            except Exception:
+                pass
+
+    def _open_files(self):
+        paths = filedialog.askopenfilenames(
+            title="Sélectionner des fichiers PDF",
+            filetypes=[("Fichiers PDF", "*.pdf")]
+        )
+        if not paths:
+            return
+        self.pdf_files = [Path(p) for p in paths]
+        self.idx = 0
+        self._hide_welcome_screen()
+        self._load_pdf()
+
+    def _open_folder(self):
+        folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les PDFs")
+        if not folder:
+            return
+        self.pdf_files = sorted(Path(folder).glob("*.pdf"))
+        if not self.pdf_files:
+            messagebox.showwarning("Aucun fichier", "Aucun fichier PDF trouvé dans ce dossier.")
+            return
+        self.idx = 0
+        self._hide_welcome_screen()
+        self._load_pdf()
 
     # --------------------------------------------------------- Logique texte ---
 
@@ -583,10 +673,6 @@ class PDFHeaderApp:
 
     def _apply(self):
         path = self.pdf_files[self.idx]
-        # Dossier de sortie
-        out_dir = path.parent.parent / (path.parent.name + "_avec_entete") \
-                  if path.parent.name != path.parent.parent.name \
-                  else path.parent / (path.parent.name + "_avec_entete")
         out_dir = path.parent.with_name(path.parent.name + "_avec_entete")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / path.name
@@ -629,12 +715,10 @@ class PDFHeaderApp:
         })
         save_config(self.cfg)
 
-        print(f"  ✓ {out_path}")
         self.idx += 1
         self._load_pdf()
 
     def _skip(self):
-        print(f"  → Ignoré : {self.pdf_files[self.idx].name}")
         self.idx += 1
         self._load_pdf()
 
@@ -645,36 +729,22 @@ def main():
     print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
     check_update()
 
-    # Collecte des PDFs
+    # Collecte des PDFs si passés en argument
+    pdf_files = []
     if len(sys.argv) > 1:
-        pdf_files = []
         for arg in sys.argv[1:]:
             p = Path(arg)
             if p.is_dir():
                 pdf_files.extend(sorted(p.glob("*.pdf")))
             elif p.suffix.lower() == ".pdf" and p.exists():
                 pdf_files.append(p)
-    else:
-        root_tmp = ctk.CTk()
-        root_tmp.withdraw()
-        folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les PDFs")
-        root_tmp.destroy()
-        if not folder:
-            sys.exit(0)
-        pdf_files = sorted(Path(folder).glob("*.pdf"))
 
-    if not pdf_files:
-        root_tmp = ctk.CTk()
-        root_tmp.withdraw()
-        messagebox.showwarning("Aucun fichier", "Aucun fichier PDF trouvé.")
-        root_tmp.destroy()
-        sys.exit(0)
-
-    print(f"{len(pdf_files)} fichier(s) PDF trouvé(s).")
+    if pdf_files:
+        print(f"{len(pdf_files)} fichier(s) PDF trouvé(s).")
 
     root = ctk.CTk()
     root.geometry("1050x750")
-    app = PDFHeaderApp(root, list(pdf_files))
+    app = PDFHeaderApp(root, pdf_files)  # liste vide → écran d'accueil
     root.mainloop()
 
 if __name__ == "__main__":
