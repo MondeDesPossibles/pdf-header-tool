@@ -4,7 +4,7 @@
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "1.0.0"
+VERSION     = "1.1.0"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -45,10 +45,10 @@ def _bootstrap():
 
     # Installer les dépendances manquantes
     import subprocess
-    pkgs = ["pymupdf", "Pillow"]
+    pkgs = ["pymupdf", "Pillow", "customtkinter"]
     for pkg in pkgs:
         try:
-            dist_name = "fitz" if pkg == "pymupdf" else pkg.lower()
+            dist_name = {"pymupdf": "fitz", "Pillow": "PIL", "customtkinter": "customtkinter"}.get(pkg, pkg.lower())
             subprocess.check_call(
                 [str(venv_python), "-c", f"import {dist_name}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -68,7 +68,8 @@ _bootstrap()
 # Imports (disponibles après bootstrap)
 # ---------------------------------------------------------------------------
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, colorchooser
+from tkinter import filedialog, messagebox, colorchooser
+import customtkinter as ctk
 from PIL import Image, ImageTk
 import fitz  # PyMuPDF
 
@@ -155,6 +156,12 @@ def hex_to_rgb_float(hex_color):
     return r / 255, g / 255, b / 255
 
 # ---------------------------------------------------------------------------
+# Thème CustomTkinter
+# ---------------------------------------------------------------------------
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+# ---------------------------------------------------------------------------
 # Application principale
 # ---------------------------------------------------------------------------
 class PDFHeaderApp:
@@ -187,52 +194,50 @@ class PDFHeaderApp:
 
     def _build_ui(self):
         self.root.title("PDF Header Tool")
-        self.root.configure(bg="#1a1a1f")
+        self.root.configure(fg_color="#1a1a1f")
         self.root.minsize(900, 650)
 
         # ── Topbar ──
-        topbar = tk.Frame(self.root, bg="#111116", height=42)
+        topbar = ctk.CTkFrame(self.root, fg_color="#111116", height=42, corner_radius=0)
         topbar.pack(fill="x", side="top")
         topbar.pack_propagate(False)
 
-        tk.Label(topbar, text="PDF HEADER TOOL",
-                 bg="#111116", fg="#e05555",
-                 font=("Courier New", 12, "bold")).pack(side="left", padx=14)
+        ctk.CTkLabel(topbar, text="PDF HEADER TOOL",
+                     fg_color="transparent", text_color="#e05555",
+                     font=("Courier New", 12, "bold")).pack(side="left", padx=14)
 
-        self.lbl_filename = tk.Label(topbar, text="",
-                                     bg="#222230", fg="#aac4ff",
-                                     font=("Courier New", 11),
-                                     padx=10, pady=3)
-        self.lbl_filename.pack(side="left", padx=8)
+        self.lbl_filename = ctk.CTkLabel(topbar, text="",
+                                         fg_color="#222230", text_color="#aac4ff",
+                                         font=("Courier New", 11), corner_radius=4)
+        self.lbl_filename.pack(side="left", padx=8, pady=6)
 
-        self.lbl_progress = tk.Label(topbar, text="",
-                                     bg="#222230", fg="#aaaaaa",
-                                     font=("Courier New", 10),
-                                     padx=10, pady=3)
-        self.lbl_progress.pack(side="right", padx=14)
+        self.lbl_progress = ctk.CTkLabel(topbar, text="",
+                                         fg_color="#222230", text_color="#aaaaaa",
+                                         font=("Courier New", 10), corner_radius=4)
+        self.lbl_progress.pack(side="right", padx=14, pady=6)
 
         # ── Corps ──
-        body = tk.Frame(self.root, bg="#1a1a1f")
+        body = ctk.CTkFrame(self.root, fg_color="#1a1a1f", corner_radius=0)
         body.pack(fill="both", expand=True)
 
         # ── Sidebar ──
-        sidebar = tk.Frame(body, bg="#22222a", width=260)
+        sidebar = ctk.CTkFrame(body, fg_color="#22222a", width=260, corner_radius=0)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
         self._build_sidebar(sidebar)
 
         # ── Canvas ──
-        canvas_frame = tk.Frame(body, bg="#141418")
+        canvas_frame = ctk.CTkFrame(body, fg_color="#141418", corner_radius=0)
         canvas_frame.pack(side="left", fill="both", expand=True)
 
-        self.hint_lbl = tk.Label(
+        self.hint_lbl = ctk.CTkLabel(
             canvas_frame,
             text="Cliquez sur la page pour positionner l'en-tête",
-            bg="#111116", fg="#888888",
-            font=("Segoe UI", 9), padx=12, pady=4
+            fg_color="#111116", text_color="#888888",
+            font=("Segoe UI", 9), corner_radius=0
         )
-        self.hint_lbl.pack(side="top", pady=8)
+        self.hint_lbl.pack(side="top", pady=8, fill="x")
 
         self.canvas = tk.Canvas(canvas_frame, bg="#141418",
                                 cursor="crosshair", highlightthickness=0)
@@ -242,40 +247,39 @@ class PDFHeaderApp:
         self.canvas.bind("<Configure>", lambda e: self._render_preview())
 
         # ── Bottombar ──
-        bottom = tk.Frame(self.root, bg="#111116", height=50)
+        bottom = ctk.CTkFrame(self.root, fg_color="#111116", height=50, corner_radius=0)
         bottom.pack(fill="x", side="bottom")
         bottom.pack_propagate(False)
 
-        self.lbl_coords = tk.Label(bottom, text="x: — pts  ·  y: — pts",
-                                   bg="#111116", fg="#555555",
-                                   font=("Courier New", 10))
+        self.lbl_coords = ctk.CTkLabel(bottom, text="x: — pts  ·  y: — pts",
+                                       fg_color="transparent", text_color="#555555",
+                                       font=("Courier New", 10))
         self.lbl_coords.pack(side="left", padx=14)
 
-        btn_apply = tk.Button(bottom, text="✓  Appliquer",
-                              bg="#55bb77", fg="#0a1a0f",
-                              font=("Segoe UI", 11, "bold"),
-                              relief="flat", padx=18, pady=6,
-                              cursor="hand2",
-                              command=self._apply)
+        btn_apply = ctk.CTkButton(bottom, text="✓  Appliquer",
+                                  fg_color="#55bb77", text_color="#0a1a0f",
+                                  hover_color="#44aa66",
+                                  font=("Segoe UI", 11, "bold"),
+                                  command=self._apply)
         btn_apply.pack(side="right", padx=10, pady=8)
 
-        btn_skip = tk.Button(bottom, text="→  Passer",
-                             bg="#2a2a35", fg="#aaaaaa",
-                             font=("Segoe UI", 11),
-                             relief="flat", padx=18, pady=6,
-                             cursor="hand2",
-                             activebackground="#3a3a4a",
-                             command=self._skip)
+        btn_skip = ctk.CTkButton(bottom, text="→  Passer",
+                                 fg_color="#2a2a35", text_color="#aaaaaa",
+                                 hover_color="#3a3a4a",
+                                 font=("Segoe UI", 11),
+                                 command=self._skip)
         btn_skip.pack(side="right", padx=4, pady=8)
 
     def _build_sidebar(self, parent):
         cfg = self.cfg
 
         def section(label):
-            tk.Label(parent, text=label, bg="#22222a", fg="#555566",
-                     font=("Segoe UI", 8, "bold")).pack(
-                         anchor="w", padx=14, pady=(14, 4))
-            tk.Frame(parent, bg="#3a3a4a", height=1).pack(fill="x", padx=14)
+            ctk.CTkLabel(parent, text=label,
+                         fg_color="transparent", text_color="#555566",
+                         font=("Segoe UI", 8, "bold"),
+                         anchor="w").pack(anchor="w", padx=14, pady=(14, 4))
+            ctk.CTkFrame(parent, fg_color="#3a3a4a", height=1,
+                         corner_radius=0).pack(fill="x", padx=14)
 
         # ── Texte de l'en-tête ──
         section("TEXTE DE L'EN-TÊTE")
@@ -289,13 +293,11 @@ class PDFHeaderApp:
             ("custom",  "Texte personnalisé"),
         ]
         for val, label in modes:
-            rb = tk.Radiobutton(parent, text=label,
-                                variable=self.text_mode, value=val,
-                                bg="#22222a", fg="#dddddd",
-                                selectcolor="#22222a",
-                                activebackground="#22222a",
-                                font=("Segoe UI", 10),
-                                command=self._on_mode_change)
+            rb = ctk.CTkRadioButton(parent, text=label,
+                                    variable=self.text_mode, value=val,
+                                    text_color="#dddddd",
+                                    font=("Segoe UI", 10),
+                                    command=self._on_mode_change)
             rb.pack(anchor="w", padx=14, pady=1)
 
         # Champs de saisie
@@ -311,99 +313,98 @@ class PDFHeaderApp:
             v.trace_add("write", lambda *_: self._on_mode_change())
 
         # Aperçu
-        tk.Label(parent, text="Aperçu :", bg="#22222a", fg="#666677",
-                 font=("Segoe UI", 8)).pack(anchor="w", padx=14, pady=(8,0))
-        self.lbl_preview = tk.Label(parent, text="",
-                                    bg="#1a1a22", fg="#e05555",
-                                    font=("Courier New", 8),
-                                    wraplength=220, justify="left",
-                                    padx=8, pady=5)
+        ctk.CTkLabel(parent, text="Aperçu :",
+                     fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 8),
+                     anchor="w").pack(anchor="w", padx=14, pady=(8, 0))
+        self.lbl_preview = ctk.CTkLabel(parent, text="",
+                                        fg_color="#1a1a22", text_color="#e05555",
+                                        font=("Courier New", 8),
+                                        wraplength=220, justify="left",
+                                        anchor="w", corner_radius=4)
         self.lbl_preview.pack(fill="x", padx=14, pady=(2, 0))
 
         # ── Style ──
         section("STYLE")
 
-        color_row = tk.Frame(parent, bg="#22222a")
+        color_row = ctk.CTkFrame(parent, fg_color="transparent")
         color_row.pack(fill="x", padx=14, pady=4)
-        tk.Label(color_row, text="Couleur", bg="#22222a", fg="#aaaaaa",
-                 font=("Segoe UI", 10), width=8, anchor="w").pack(side="left")
-        self.color_swatch = tk.Label(color_row, bg=cfg["color_hex"],
-                                     width=3, relief="flat", cursor="hand2")
+        ctk.CTkLabel(color_row, text="Couleur",
+                     fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self.color_swatch = tk.Canvas(color_row, width=26, height=18,
+                                      bg=cfg["color_hex"],
+                                      highlightthickness=0, cursor="hand2")
         self.color_swatch.pack(side="left", padx=4)
-        self.lbl_color_hex = tk.Label(color_row, text=cfg["color_hex"],
-                                      bg="#22222a", fg="#888888",
-                                      font=("Courier New", 9))
+        self.lbl_color_hex = ctk.CTkLabel(color_row, text=cfg["color_hex"],
+                                          fg_color="transparent", text_color="#888888",
+                                          font=("Courier New", 9))
         self.lbl_color_hex.pack(side="left", padx=4)
         self.color_swatch.bind("<Button-1>", self._pick_color)
 
-        size_row = tk.Frame(parent, bg="#22222a")
+        size_row = ctk.CTkFrame(parent, fg_color="transparent")
         size_row.pack(fill="x", padx=14, pady=4)
-        tk.Label(size_row, text="Taille", bg="#22222a", fg="#aaaaaa",
-                 font=("Segoe UI", 10), width=8, anchor="w").pack(side="left")
+        ctk.CTkLabel(size_row, text="Taille",
+                     fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        btn_minus = ctk.CTkButton(size_row, text="−", width=30, height=26,
+                                  fg_color="#2a2a35", hover_color="#3a3a4a",
+                                  text_color="#dddddd",
+                                  command=lambda: self._change_size(-1))
+        btn_minus.pack(side="left", padx=(0, 2))
         self.var_size = tk.IntVar(value=cfg.get("font_size", 8))
-        spin = tk.Spinbox(size_row, from_=4, to=72, textvariable=self.var_size,
-                          width=4, bg="#2a2a35", fg="#dddddd",
-                          buttonbackground="#3a3a4a",
-                          font=("Courier New", 10),
-                          command=self._on_mode_change)
-        spin.pack(side="left")
-        tk.Label(size_row, text="pts", bg="#22222a", fg="#666677",
-                 font=("Segoe UI", 9)).pack(side="left", padx=4)
+        ctk.CTkEntry(size_row, textvariable=self.var_size,
+                     width=46, fg_color="#2a2a35", text_color="#dddddd",
+                     border_color="#3a3a4a",
+                     font=("Courier New", 10)).pack(side="left")
+        btn_plus = ctk.CTkButton(size_row, text="+", width=30, height=26,
+                                 fg_color="#2a2a35", hover_color="#3a3a4a",
+                                 text_color="#dddddd",
+                                 command=lambda: self._change_size(1))
+        btn_plus.pack(side="left", padx=(2, 0))
+        ctk.CTkLabel(size_row, text="pts",
+                     fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 9)).pack(side="left", padx=4)
 
         # ── Pages ──
         section("APPLIQUER SUR")
 
         self.var_all_pages = tk.BooleanVar(value=cfg.get("all_pages", True))
-        pages_frame = tk.Frame(parent, bg="#22222a")
+        pages_frame = ctk.CTkFrame(parent, fg_color="transparent")
         pages_frame.pack(fill="x", padx=14, pady=4)
 
         for text, val in [("Toutes les pages", True), ("Première page", False)]:
-            rb = tk.Radiobutton(pages_frame, text=text,
-                                variable=self.var_all_pages, value=val,
-                                bg="#22222a", fg="#dddddd",
-                                selectcolor="#22222a",
-                                activebackground="#22222a",
-                                font=("Segoe UI", 10))
+            rb = ctk.CTkRadioButton(pages_frame, text=text,
+                                    variable=self.var_all_pages, value=val,
+                                    text_color="#dddddd",
+                                    font=("Segoe UI", 10))
             rb.pack(anchor="w", pady=1)
 
         # ── Position mémorisée ──
         section("POSITION MÉMORISÉE")
-        self.lbl_pos = tk.Label(parent, text="—",
-                                bg="#22222a", fg="#888888",
-                                font=("Courier New", 9),
-                                justify="left")
+        self.lbl_pos = ctk.CTkLabel(parent, text="—",
+                                    fg_color="transparent", text_color="#888888",
+                                    font=("Courier New", 9),
+                                    justify="left", anchor="w")
         self.lbl_pos.pack(anchor="w", padx=14, pady=4)
-        tk.Label(parent,
-                 text="Cliquez sur la page pour\ndéplacer l'en-tête",
-                 bg="#22222a", fg="#444455",
-                 font=("Segoe UI", 8),
-                 justify="left").pack(anchor="w", padx=14)
+        ctk.CTkLabel(parent,
+                     text="Cliquez sur la page pour\ndéplacer l'en-tête",
+                     fg_color="transparent", text_color="#444455",
+                     font=("Segoe UI", 8),
+                     justify="left", anchor="w").pack(anchor="w", padx=14)
 
         self._on_mode_change()
         self._update_pos_label()
 
     def _make_entry(self, parent, var, placeholder):
-        frame = tk.Frame(parent, bg="#22222a")
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.pack(fill="x", padx=28, pady=1)
-        entry = tk.Entry(frame, textvariable=var,
-                         bg="#2a2a35", fg="#dddddd",
-                         insertbackground="#dddddd",
-                         relief="flat", font=("Courier New", 9))
-        entry.pack(fill="x", ipady=3)
-        # Placeholder
-        if not var.get():
-            entry.insert(0, placeholder)
-            entry.config(fg="#555566")
-            def on_focus_in(e, en=entry, ph=placeholder, v=var):
-                if en.get() == ph:
-                    en.delete(0, "end")
-                    en.config(fg="#dddddd")
-            def on_focus_out(e, en=entry, ph=placeholder, v=var):
-                if not en.get():
-                    en.insert(0, ph)
-                    en.config(fg="#555566")
-            entry.bind("<FocusIn>",  on_focus_in)
-            entry.bind("<FocusOut>", on_focus_out)
+        ctk.CTkEntry(frame, textvariable=var,
+                     placeholder_text=placeholder,
+                     placeholder_text_color="#555566",
+                     fg_color="#2a2a35", text_color="#dddddd",
+                     border_color="#3a3a4a",
+                     font=("Courier New", 9)).pack(fill="x")
         return frame
 
     # --------------------------------------------------------- Logique texte ---
@@ -427,8 +428,13 @@ class PDFHeaderApp:
         if mode == "custom":  return cst if cst else name
         return name
 
+    def _change_size(self, delta):
+        val = max(4, min(72, self.var_size.get() + delta))
+        self.var_size.set(val)
+        self._on_mode_change()
+
     def _on_mode_change(self, *_):
-        self.lbl_preview.config(text=self._get_header_text())
+        self.lbl_preview.configure(text=self._get_header_text())
         self._draw_overlay()
 
     # --------------------------------------------------------- Couleur --------
@@ -441,7 +447,7 @@ class PDFHeaderApp:
         if color and color[1]:
             self.cfg["color_hex"] = color[1].upper()
             self.color_swatch.config(bg=self.cfg["color_hex"])
-            self.lbl_color_hex.config(text=self.cfg["color_hex"])
+            self.lbl_color_hex.configure(text=self.cfg["color_hex"])
             self._draw_overlay()
 
     # --------------------------------------------------------- PDF courant ----
@@ -453,8 +459,8 @@ class PDFHeaderApp:
             return
 
         path = self.pdf_files[self.idx]
-        self.lbl_filename.config(text=f"  {path.name}  ")
-        self.lbl_progress.config(
+        self.lbl_filename.configure(text=f"  {path.name}  ")
+        self.lbl_progress.configure(
             text=f"  {self.idx + 1} / {len(self.pdf_files)}  "
         )
         if self.doc:
@@ -565,11 +571,11 @@ class PDFHeaderApp:
         # Coordonnées en points PDF
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         x_pt, y_pt = self._ratio_to_pdf_pt(rx, ry)
-        self.lbl_coords.config(text=f"x: {x_pt:.0f} pts  ·  y: {y_pt:.0f} pts")
+        self.lbl_coords.configure(text=f"x: {x_pt:.0f} pts  ·  y: {y_pt:.0f} pts")
 
     def _update_pos_label(self):
         x_pt, y_pt = self._ratio_to_pdf_pt(self.pos_ratio_x, self.pos_ratio_y)
-        self.lbl_pos.config(text=f"x : {x_pt:.0f} pts\ny : {y_pt:.0f} pts")
+        self.lbl_pos.configure(text=f"x : {x_pt:.0f} pts\ny : {y_pt:.0f} pts")
 
     # --------------------------------------------------------- Actions --------
 
@@ -646,7 +652,7 @@ def main():
             elif p.suffix.lower() == ".pdf" and p.exists():
                 pdf_files.append(p)
     else:
-        root_tmp = tk.Tk()
+        root_tmp = ctk.CTk()
         root_tmp.withdraw()
         folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les PDFs")
         root_tmp.destroy()
@@ -655,13 +661,15 @@ def main():
         pdf_files = sorted(Path(folder).glob("*.pdf"))
 
     if not pdf_files:
-        tk.Tk().withdraw()
+        root_tmp = ctk.CTk()
+        root_tmp.withdraw()
         messagebox.showwarning("Aucun fichier", "Aucun fichier PDF trouvé.")
+        root_tmp.destroy()
         sys.exit(0)
 
     print(f"{len(pdf_files)} fichier(s) PDF trouvé(s).")
 
-    root = tk.Tk()
+    root = ctk.CTk()
     root.geometry("1050x750")
     app = PDFHeaderApp(root, list(pdf_files))
     root.mainloop()
