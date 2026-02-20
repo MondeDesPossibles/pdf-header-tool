@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.3.0
-# Build   : build-2026.02.20.19
+# Version : 0.4.0
+# Build   : build-2026.02.20.20
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -123,8 +123,8 @@ Ajouter un panneau à droite de la prévisualisation listant tous les PDFs charg
 ---
 
 ## Étape 4 — Refonte du texte de l'en-tête
-**Statut : À faire — dépend de l'Étape 1**
-**Version cible : 0.4.0**
+**Statut : Terminé ✓**
+**Version livrée : 0.4.0**
 
 Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 

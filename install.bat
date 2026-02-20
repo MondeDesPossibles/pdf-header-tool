@@ -1,8 +1,8 @@
 @echo off
 :: ==============================================================================
 :: PDF Header Tool - install.bat
-:: Version : 0.3.0
-:: Build   : build-2026.02.20.19
+:: Version : 0.4.0
+:: Build   : build-2026.02.20.20
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,7 +13,7 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
-set "BUILD_ID=build-2026.02.20.19"
+set "BUILD_ID=build-2026.02.20.20"
 set "PYTHON_CMD=python"
 set "PY_EXE="
 

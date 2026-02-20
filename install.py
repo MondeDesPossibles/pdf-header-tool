@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool - install.py
-# Version : 0.3.0
-# Build   : build-2026.02.20.19
+# Version : 0.4.0
+# Build   : build-2026.02.20.20
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
@@ -50,7 +50,7 @@ VENV_PYTHON  = _resolve_venv_python(INSTALL_DIR)
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
-INSTALLER_VERSION = "build-2026.02.20.19"
+INSTALLER_VERSION = "build-2026.02.20.20"
 
 # ---------------------------------------------------------------------------
 # Utilitaires

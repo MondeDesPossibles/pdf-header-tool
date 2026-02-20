@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
-# Version : 0.3.0
-# Build   : build-2026.02.20.19
+# Version : 0.4.0
+# Build   : build-2026.02.20.20
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.3.0"
-BUILD_ID    = "build-2026.02.20.19"
+VERSION     = "0.4.0"
+BUILD_ID    = "build-2026.02.20.20"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -15,6 +15,7 @@ import json
 import shutil
 import tempfile
 import threading
+import datetime
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -35,17 +36,14 @@ def _bootstrap():
     else:
         venv_python = venv_dir / "bin" / "python"
 
-    # Déjà dans le venv ?
     if Path(sys.executable).resolve() == venv_python.resolve():
         return
 
-    # Créer le venv si nécessaire
     if not venv_python.exists():
         import venv as _venv
         print("Création de l'environnement virtuel…")
         _venv.create(str(venv_dir), with_pip=True)
 
-    # Installer les dépendances manquantes
     import subprocess
     pkgs = ["pymupdf", "Pillow", "customtkinter"]
     for pkg in pkgs:
@@ -61,7 +59,6 @@ def _bootstrap():
                 [str(venv_python), "-m", "pip", "install", pkg, "--quiet"],
             )
 
-    # Relancer dans le venv
     os.execv(str(venv_python), [str(venv_python)] + sys.argv)
 
 _bootstrap()
@@ -78,21 +75,56 @@ import fitz  # PyMuPDF
 # ---------------------------------------------------------------------------
 # Chemins et config
 # ---------------------------------------------------------------------------
-INSTALL_DIR  = _get_install_dir()
-CONFIG_FILE  = INSTALL_DIR / "pdf_header_config.json"
+INSTALL_DIR = _get_install_dir()
+CONFIG_FILE = INSTALL_DIR / "pdf_header_config.json"
 
 DEFAULT_CONFIG = {
-    "text_mode"   : "nom",       # nom | prefixe | suffixe | custom
-    "prefixe"     : "",
-    "suffixe"     : "",
-    "custom"      : "",
-    "color_hex"   : "#FF0000",
-    "font_size"   : 8,
-    "all_pages"   : True,
-    "last_x_ratio": 0.85,        # position mémorisée en ratio (0-1)
-    "last_y_ratio": 0.97,
-    "ui_font_size": 12,           # taille de base de l'interface (8-18)
-    "debug_enabled": False,       # active le log dans pdf_header_debug.log
+    # Composition du texte
+    "use_filename"   : True,
+    "use_prefix"     : False,
+    "prefix_text"    : "",
+    "use_suffix"     : False,
+    "suffix_text"    : "",
+    "use_custom"     : False,
+    "custom_text"    : "",
+    # Date
+    "use_date"       : False,
+    "date_position"  : "suffix",     # "prefix" | "suffix"
+    "date_source"    : "today",      # "today" | "file_mtime"
+    "date_format"    : "%d/%m/%Y",
+    # Typographie
+    "color_hex"      : "#FF0000",
+    "font_family"    : "Courier",
+    "font_file"      : None,         # None = builtin, sinon chemin absolu (str)
+    "font_size"      : 8,
+    "bold"           : False,
+    "italic"         : False,
+    "underline"      : False,
+    "letter_spacing" : 0.0,          # stocké, non appliqué au PDF en v0.4.0
+    "line_spacing"   : 1.2,
+    # Position
+    "preset_position": "tr",
+    "margin_x_pt"    : 20.0,
+    "margin_y_pt"    : 20.0,
+    "last_x_ratio"   : 0.85,
+    "last_y_ratio"   : 0.03,
+    # Rotation
+    "rotation"       : 0,            # 0 | 90 | 180 | 270
+    # Cadre
+    "use_frame"      : False,
+    "frame_color_hex": "#000000",
+    "frame_width"    : 1.0,
+    "frame_style"    : "solid",      # "solid" | "dashed"
+    "frame_padding"  : 3.0,
+    "frame_opacity"  : 1.0,
+    # Fond
+    "use_bg"         : False,
+    "bg_color_hex"   : "#FFFFFF",
+    "bg_opacity"     : 0.8,
+    # Application
+    "all_pages"      : True,
+    "ui_font_size"   : 12,
+    "debug_enabled"  : False,
 }
 
 def load_config():
@@ -100,9 +132,24 @@ def load_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            # Fusionner avec les valeurs par défaut pour les clés manquantes
             for k, v in DEFAULT_CONFIG.items():
                 cfg.setdefault(k, v)
+            # Migration depuis format < v0.4.0
+            if "text_mode" in cfg:
+                old_mode = cfg.pop("text_mode", "nom")
+                old_pfx  = cfg.pop("prefixe",   "")
+                old_sfx  = cfg.pop("suffixe",   "")
+                old_cst  = cfg.pop("custom",    "")
+                if old_mode == "prefixe" and old_pfx:
+                    cfg["use_prefix"]  = True
+                    cfg["prefix_text"] = old_pfx
+                elif old_mode == "suffixe" and old_sfx:
+                    cfg["use_suffix"]  = True
+                    cfg["suffix_text"] = old_sfx
+                elif old_mode == "custom":
+                    cfg["use_custom"]  = True
+                    cfg["custom_text"] = old_cst
+                cfg.setdefault("use_filename", old_mode != "custom")
             return cfg
         except Exception:
             pass
@@ -125,7 +172,6 @@ _DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
 def _debug_log(msg: str):
     if not _DEBUG_ENABLED:
         return
-    import datetime
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
@@ -137,35 +183,26 @@ def _debug_log(msg: str):
 # Mise à jour automatique
 # ---------------------------------------------------------------------------
 def _check_update_thread():
-    """Vérifie GitHub en arrière-plan, met à jour si nouvelle version."""
     try:
         url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.txt"
         req = urllib.request.Request(url, headers={"User-Agent": "PDFHeaderTool"})
         with urllib.request.urlopen(req, timeout=5) as r:
             remote_version = r.read().decode().strip()
-
         if remote_version == VERSION:
             return
-
-        # Nouvelle version disponible — télécharger pdf_header.py
         script_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/pdf_header.py"
         req2 = urllib.request.Request(script_url, headers={"User-Agent": "PDFHeaderTool"})
         with urllib.request.urlopen(req2, timeout=15) as r:
             new_content = r.read()
-
-        # Valider que le contenu téléchargé est du Python syntaxiquement correct
         import ast
         ast.parse(new_content.decode())
-
-        # Écrire dans un fichier temporaire puis remplacer
         script_path = Path(__file__).resolve()
         tmp = script_path.with_suffix(".tmp")
         tmp.write_bytes(new_content)
         tmp.replace(script_path)
         print(f"Mise à jour effectuée : {VERSION} → {remote_version}. Relancez l'application.")
-
     except Exception:
-        pass  # Pas de réseau ou repo indisponible, on ignore silencieusement
+        pass
 
 def check_update():
     t = threading.Thread(target=_check_update_thread, daemon=True)
@@ -179,6 +216,128 @@ def hex_to_rgb_float(hex_color):
     h = hex_color.lstrip("#")
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     return r / 255, g / 255, b / 255
+
+# ---------------------------------------------------------------------------
+# Système de polices — hybride : built-in PDF + prioritaires système
+# ---------------------------------------------------------------------------
+BUILTIN_FONTS = {
+    "Courier":   {("r",): "cour",  ("b",): "courB",  ("i",): "courI",  ("b","i"): "courBI"},
+    "Helvetica": {("r",): "helv",  ("b",): "helvB",  ("i",): "helvO",  ("b","i"): "helvBO"},
+    "Times":     {("r",): "tiro",  ("b",): "tiroB",  ("i",): "tiroI",  ("b","i"): "tiroBI"},
+}
+
+PRIORITY_FONTS = {
+    "win32": [
+        ("Arial",           "arial"),
+        ("Calibri",         "calibri"),
+        ("Verdana",         "verdana"),
+        ("Georgia",         "georgia"),
+        ("Times New Roman", "times new roman"),
+    ],
+    "darwin": [
+        ("Helvetica Neue",  "helveticaneue"),
+        ("Arial",           "arial"),
+        ("Georgia",         "georgia"),
+    ],
+    "linux": [
+        ("DejaVu Sans",     "DejaVuSans"),
+        ("Liberation Sans", "LiberationSans-Regular"),
+        ("Noto Sans",       "NotoSans-Regular"),
+        ("Ubuntu",          "Ubuntu-R"),
+        ("Roboto",          "Roboto-Regular"),
+        ("Lato",            "Lato-Regular"),
+    ],
+}
+
+# Grille 3×3 : clé → (row, col)
+POSITION_PRESETS = {
+    "tl": (0, 0), "tc": (0, 1), "tr": (0, 2),
+    "ml": (1, 0), "mc": (1, 1), "mr": (1, 2),
+    "bl": (2, 0), "bc": (2, 1), "br": (2, 2),
+}
+PRESET_LABELS = {
+    "tl": "↖", "tc": "↑", "tr": "↗",
+    "ml": "←", "mc": "·", "mr": "→",
+    "bl": "↙", "bc": "↓", "br": "↘",
+}
+
+DATE_FORMATS = [
+    ("%d/%m/%Y",       "ex: 20/02/2026"),
+    ("%Y-%m-%d",       "ex: 2026-02-20"),
+    ("%d %B %Y",       "ex: 20 février 2026"),
+    ("%B %Y",          "ex: février 2026"),
+    ("%Y",             "ex: 2026"),
+    ("%d/%m/%Y %H:%M", "ex: 20/02/2026 14:30"),
+    ("%d %b %Y",       "ex: 20 fév. 2026"),
+    ("%A %d %B %Y",    "ex: vendredi 20 février 2026"),
+]
+
+def _get_font_dirs() -> list:
+    """Retourne les dossiers de polices système selon la plateforme."""
+    if sys.platform == "win32":
+        win_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+        dirs = [win_fonts]
+        local_fonts = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
+        if local_fonts.exists():
+            dirs.append(local_fonts)
+        return dirs
+    elif sys.platform == "darwin":
+        return [
+            Path("/Library/Fonts"),
+            Path("/System/Library/Fonts"),
+            Path.home() / "Library" / "Fonts",
+        ]
+    else:
+        return [
+            Path("/usr/share/fonts"),
+            Path("/usr/local/share/fonts"),
+            Path.home() / ".fonts",
+            Path.home() / ".local" / "share" / "fonts",
+        ]
+
+def _find_priority_fonts() -> dict:
+    """
+    Cherche les polices prioritaires connues sur le système.
+    Retourne {display_name: Path}. Pas de scan exhaustif.
+    """
+    platform_key = sys.platform if sys.platform in PRIORITY_FONTS else "linux"
+    candidates   = PRIORITY_FONTS[platform_key]
+    font_dirs    = _get_font_dirs()
+    found        = {}
+    extensions   = (".ttf", ".otf", ".TTF", ".OTF")
+    for display_name, filename_stem in candidates:
+        for font_dir in font_dirs:
+            if not font_dir.exists():
+                continue
+            for ext in extensions:
+                candidate = font_dir / (filename_stem + ext)
+                if candidate.exists():
+                    found[display_name] = candidate
+                    break
+            if display_name in found:
+                break
+    return found
+
+def _get_fitz_font_args(family: str, font_file, bold: bool, italic: bool) -> dict:
+    """
+    Retourne les kwargs de police pour insert_textbox().
+    Priorité : font_file (système) > BUILTIN_FONTS > fallback Courier.
+    """
+    if font_file and Path(str(font_file)).exists():
+        return {"fontfile": str(font_file), "fontname": "F0"}
+    if family in BUILTIN_FONTS:
+        variants = BUILTIN_FONTS[family]
+        if bold and italic:
+            key = ("b", "i")
+        elif bold:
+            key = ("b",)
+        elif italic:
+            key = ("i",)
+        else:
+            key = ("r",)
+        fontname = variants.get(key) or variants.get(("r",), "cour")
+        return {"fontname": fontname}
+    return {"fontname": "cour"}
 
 # ---------------------------------------------------------------------------
 # Thème CustomTkinter
@@ -205,14 +364,21 @@ class PDFHeaderApp:
         self.scale         = 1.0
         self.img_offset_x  = 0
         self.img_offset_y  = 0
-        self.page_w_pt     = 1.0   # largeur page en points PDF
-        self.page_h_pt     = 1.0   # hauteur page en points PDF
-        self.page_w_px     = 1     # largeur rendu en pixels
+        self.page_w_pt     = 595.0   # A4 par défaut
+        self.page_h_pt     = 842.0
+        self.page_w_px     = 1
         self.page_h_px     = 1
 
-        # Position en ratio (0-1) de la page PDF
-        self.pos_ratio_x = self.cfg.get("last_x_ratio", 0.85)
-        self.pos_ratio_y = self.cfg.get("last_y_ratio", 0.97)
+        # Position en ratio (0-1)
+        self.pos_ratio_x   = self.cfg.get("last_x_ratio", 0.85)
+        self.pos_ratio_y   = self.cfg.get("last_y_ratio", 0.03)
+
+        # Preset de position courant
+        self.preset_position = self.cfg.get("preset_position", "tr")
+
+        # Polices système disponibles (chargées avant _build_ui)
+        self._system_fonts = {}
+        self._load_system_fonts()
 
         self.file_states = {}
         self._build_ui()
@@ -225,12 +391,18 @@ class PDFHeaderApp:
         else:
             self._show_welcome_screen()
 
+    # ---------------------------------------------------------------- Fonts ---
+
+    def _load_system_fonts(self):
+        """Charge les polices système prioritaires disponibles."""
+        self._system_fonts = _find_priority_fonts()
+
     # ------------------------------------------------------------------ UI ---
 
     def _build_ui(self):
         self.root.title("PDF Header Tool")
         self.root.configure(fg_color="#1a1a1f")
-        self.root.minsize(900, 650)
+        self.root.minsize(980, 650)
 
         # ── Topbar ──
         topbar = ctk.CTkFrame(self.root, fg_color="#111116", height=42, corner_radius=0)
@@ -255,13 +427,20 @@ class PDFHeaderApp:
         body = ctk.CTkFrame(self.root, fg_color="#1a1a1f", corner_radius=0)
         body.pack(fill="both", expand=True)
 
-        # ── Sidebar ──
-        sidebar = ctk.CTkFrame(body, fg_color="#22222a", width=260, corner_radius=0)
-        sidebar.pack(side="left", fill="y")
-        sidebar.pack_propagate(False)
+        # ── Sidebar (outer frame fixe + inner scrollable) ──
+        sidebar_outer = ctk.CTkFrame(body, fg_color="#22222a", width=270, corner_radius=0)
+        sidebar_outer.pack(side="left", fill="y")
+        sidebar_outer.pack_propagate(False)
 
         self._sidebar_interactive = []
-        self._build_sidebar(sidebar)
+
+        sidebar_scroll = ctk.CTkScrollableFrame(
+            sidebar_outer, fg_color="#22222a", corner_radius=0,
+            scrollbar_button_color="#3a3a4a",
+            scrollbar_button_hover_color="#4a4a5a"
+        )
+        sidebar_scroll.pack(fill="both", expand=True)
+        self._build_sidebar(sidebar_scroll)
 
         # ── Panneau fichiers (droit) ──
         self.file_panel = ctk.CTkFrame(body, fg_color="#1e1e25", width=220, corner_radius=0)
@@ -312,69 +491,209 @@ class PDFHeaderApp:
                                  command=self._skip)
         self.btn_skip.pack(side="right", padx=4, pady=8)
 
+    def _section(self, parent, label):
+        """Séparateur de section dans la sidebar."""
+        ctk.CTkLabel(parent, text=label,
+                     fg_color="transparent", text_color="#555566",
+                     font=("Segoe UI", 10, "bold"),
+                     anchor="w").pack(anchor="w", padx=14, pady=(14, 4))
+        ctk.CTkFrame(parent, fg_color="#3a3a4a", height=1,
+                     corner_radius=0).pack(fill="x", padx=14)
+
     def _build_sidebar(self, parent):
         cfg = self.cfg
 
-        def section(label):
-            ctk.CTkLabel(parent, text=label,
-                         fg_color="transparent", text_color="#555566",
-                         font=("Segoe UI", 10, "bold"),
-                         anchor="w").pack(anchor="w", padx=14, pady=(14, 4))
-            ctk.CTkFrame(parent, fg_color="#3a3a4a", height=1,
-                         corner_radius=0).pack(fill="x", padx=14)
+        # ═══════════════════════════════════════════════════════════════
+        # TEXTE DE L'EN-TÊTE
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "TEXTE DE L'EN-TÊTE")
 
-        # ── Texte de l'en-tête ──
-        section("TEXTE DE L'EN-TÊTE")
+        # Nom du fichier (sans .pdf)
+        self.var_use_filename = tk.BooleanVar(value=cfg.get("use_filename", True))
+        cb_fn = ctk.CTkCheckBox(parent, text="Nom du fichier (sans .pdf)",
+                                variable=self.var_use_filename,
+                                text_color="#dddddd", font=("Segoe UI", 12),
+                                command=self._on_text_change)
+        cb_fn.pack(anchor="w", padx=14, pady=(6, 2))
+        self._sidebar_interactive.append(cb_fn)
 
-        self.text_mode = tk.StringVar(value=cfg["text_mode"])
+        # Texte personnalisé
+        self.var_use_custom = tk.BooleanVar(value=cfg.get("use_custom", False))
+        cb_cust = ctk.CTkCheckBox(parent, text="Texte personnalisé",
+                                  variable=self.var_use_custom,
+                                  text_color="#dddddd", font=("Segoe UI", 12),
+                                  command=self._on_use_custom_change)
+        cb_cust.pack(anchor="w", padx=14, pady=2)
+        self._sidebar_interactive.append(cb_cust)
 
-        modes = [
-            ("nom",     "Nom du fichier"),
-            ("prefixe", "Préfixe  +  nom"),
-            ("suffixe", "Nom  +  suffixe"),
-            ("custom",  "Texte personnalisé"),
-        ]
-        for val, label in modes:
-            rb = ctk.CTkRadioButton(parent, text=label,
-                                    variable=self.text_mode, value=val,
-                                    text_color="#dddddd",
-                                    font=("Segoe UI", 12),
-                                    command=self._on_mode_change)
-            rb.pack(anchor="w", padx=14, pady=1)
-            self._sidebar_interactive.append(rb)
+        self.var_custom_text = tk.StringVar(value=cfg.get("custom_text", ""))
+        self.entry_custom = ctk.CTkEntry(parent, textvariable=self.var_custom_text,
+                              placeholder_text="ex: Société XYZ",
+                              placeholder_text_color="#555566",
+                              fg_color="#2a2a35", text_color="#dddddd",
+                              border_color="#3a3a4a", font=("Courier New", 11))
+        self.entry_custom.pack(fill="x", padx=28, pady=(1, 4))
+        self._sidebar_interactive.append(self.entry_custom)
+        self.var_custom_text.trace_add("write", lambda *_: self._on_text_change())
 
-        # Champs de saisie
-        self.var_prefixe = tk.StringVar(value=cfg.get("prefixe", ""))
-        self.var_suffixe = tk.StringVar(value=cfg.get("suffixe", ""))
-        self.var_custom  = tk.StringVar(value=cfg.get("custom",  ""))
+        # Préfixe
+        self.var_use_prefix = tk.BooleanVar(value=cfg.get("use_prefix", False))
+        cb_pfx = ctk.CTkCheckBox(parent, text="Préfixe",
+                                  variable=self.var_use_prefix,
+                                  text_color="#dddddd", font=("Segoe UI", 12),
+                                  command=self._on_text_change)
+        cb_pfx.pack(anchor="w", padx=14, pady=(4, 1))
+        self._sidebar_interactive.append(cb_pfx)
 
-        self.entry_prefixe = self._make_entry(parent, self.var_prefixe, "ex: CONFIDENTIEL –")
-        self.entry_suffixe = self._make_entry(parent, self.var_suffixe, "ex: – DRAFT")
-        self.entry_custom  = self._make_entry(parent, self.var_custom,  "ex: Société XYZ")
+        self.var_prefix_text = tk.StringVar(value=cfg.get("prefix_text", ""))
+        entry_pfx = ctk.CTkEntry(parent, textvariable=self.var_prefix_text,
+                      placeholder_text="ex: CONFIDENTIEL –",
+                      placeholder_text_color="#555566",
+                      fg_color="#2a2a35", text_color="#dddddd",
+                      border_color="#3a3a4a", font=("Courier New", 11))
+        entry_pfx.pack(fill="x", padx=28, pady=(1, 4))
+        self._sidebar_interactive.append(entry_pfx)
+        self.var_prefix_text.trace_add("write", lambda *_: self._on_text_change())
 
-        for v in [self.var_prefixe, self.var_suffixe, self.var_custom]:
-            v.trace_add("write", lambda *_: self._on_mode_change())
+        # Suffixe
+        self.var_use_suffix = tk.BooleanVar(value=cfg.get("use_suffix", False))
+        cb_sfx = ctk.CTkCheckBox(parent, text="Suffixe",
+                                  variable=self.var_use_suffix,
+                                  text_color="#dddddd", font=("Segoe UI", 12),
+                                  command=self._on_text_change)
+        cb_sfx.pack(anchor="w", padx=14, pady=(4, 1))
+        self._sidebar_interactive.append(cb_sfx)
 
-        # Aperçu
-        ctk.CTkLabel(parent, text="Aperçu :",
-                     fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10),
-                     anchor="w").pack(anchor="w", padx=14, pady=(8, 0))
-        self.lbl_preview = ctk.CTkLabel(parent, text="",
-                                        fg_color="#1a1a22", text_color="#e05555",
-                                        font=("Courier New", 10),
-                                        wraplength=220, justify="left",
-                                        anchor="w", corner_radius=4)
-        self.lbl_preview.pack(fill="x", padx=14, pady=(2, 0))
+        self.var_suffix_text = tk.StringVar(value=cfg.get("suffix_text", ""))
+        entry_sfx = ctk.CTkEntry(parent, textvariable=self.var_suffix_text,
+                      placeholder_text="ex: – v2",
+                      placeholder_text_color="#555566",
+                      fg_color="#2a2a35", text_color="#dddddd",
+                      border_color="#3a3a4a", font=("Courier New", 11))
+        entry_sfx.pack(fill="x", padx=28, pady=(1, 4))
+        self._sidebar_interactive.append(entry_sfx)
+        self.var_suffix_text.trace_add("write", lambda *_: self._on_text_change())
 
-        # ── Style ──
-        section("STYLE")
+        # ═══════════════════════════════════════════════════════════════
+        # DATE
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "DATE")
 
+        self.var_use_date = tk.BooleanVar(value=cfg.get("use_date", False))
+        self._cb_date = ctk.CTkCheckBox(parent, text="Inclure la date",
+                                        variable=self.var_use_date,
+                                        text_color="#dddddd", font=("Segoe UI", 12),
+                                        command=self._on_date_toggle)
+        self._cb_date.pack(anchor="w", padx=14, pady=(6, 4))
+        self._sidebar_interactive.append(self._cb_date)
+
+        # Options date (affichées/masquées selon checkbox)
+        self._date_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+        row_dp = ctk.CTkFrame(self._date_options_frame, fg_color="transparent")
+        row_dp.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_dp, text="Position", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self.var_date_position = tk.StringVar(value=cfg.get("date_position", "suffix"))
+        opt_dp = ctk.CTkOptionMenu(row_dp, values=["suffix", "prefix"],
+                                   variable=self.var_date_position,
+                                   fg_color="#2a2a35", button_color="#3a3a4a",
+                                   button_hover_color="#4a4a5a", text_color="#dddddd",
+                                   font=("Segoe UI", 11), width=110,
+                                   command=lambda _: self._on_text_change())
+        opt_dp.pack(side="left", padx=4)
+        self._sidebar_interactive.append(opt_dp)
+
+        row_ds = ctk.CTkFrame(self._date_options_frame, fg_color="transparent")
+        row_ds.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_ds, text="Source", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self.var_date_source = tk.StringVar(value=cfg.get("date_source", "today"))
+        opt_ds = ctk.CTkOptionMenu(row_ds, values=["today", "file_mtime"],
+                                   variable=self.var_date_source,
+                                   fg_color="#2a2a35", button_color="#3a3a4a",
+                                   button_hover_color="#4a4a5a", text_color="#dddddd",
+                                   font=("Segoe UI", 11), width=110,
+                                   command=lambda _: self._on_text_change())
+        opt_ds.pack(side="left", padx=4)
+        self._sidebar_interactive.append(opt_ds)
+
+        row_df = ctk.CTkFrame(self._date_options_frame, fg_color="transparent")
+        row_df.pack(fill="x", padx=10, pady=(2, 6))
+        ctk.CTkLabel(row_df, text="Format", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self._date_format_map = {f"{fmt}  ({ex})": fmt for fmt, ex in DATE_FORMATS}
+        date_fmt_labels = list(self._date_format_map.keys())
+        current_fmt = cfg.get("date_format", "%d/%m/%Y")
+        current_fmt_label = next(
+            (d for d, f in self._date_format_map.items() if f == current_fmt),
+            date_fmt_labels[0]
+        )
+        self.var_date_format = tk.StringVar(value=current_fmt)
+        opt_df = ctk.CTkOptionMenu(row_df, values=date_fmt_labels,
+                                   fg_color="#2a2a35", button_color="#3a3a4a",
+                                   button_hover_color="#4a4a5a", text_color="#dddddd",
+                                   font=("Segoe UI", 9), width=185,
+                                   command=self._on_date_format_change)
+        opt_df.set(current_fmt_label)
+        opt_df.pack(side="left", padx=4)
+        self._sidebar_interactive.append(opt_df)
+
+        # ═══════════════════════════════════════════════════════════════
+        # TYPOGRAPHIE
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "TYPOGRAPHIE")
+
+        # Police
+        row_font = ctk.CTkFrame(parent, fg_color="transparent")
+        row_font.pack(fill="x", padx=14, pady=(6, 2))
+        ctk.CTkLabel(row_font, text="Police", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 11), width=52, anchor="w").pack(side="left")
+        all_font_names = list(BUILTIN_FONTS.keys()) + list(self._system_fonts.keys())
+        current_family = cfg.get("font_family", "Courier")
+        if current_family not in all_font_names:
+            current_family = "Courier"
+        self.var_font_family = tk.StringVar(value=current_family)
+        opt_font = ctk.CTkOptionMenu(row_font, values=all_font_names,
+                                     variable=self.var_font_family,
+                                     fg_color="#2a2a35", button_color="#3a3a4a",
+                                     button_hover_color="#4a4a5a", text_color="#dddddd",
+                                     font=("Segoe UI", 11), width=155,
+                                     command=self._on_font_change)
+        opt_font.pack(side="left", padx=4)
+        self._sidebar_interactive.append(opt_font)
+
+        # Taille
+        size_row = ctk.CTkFrame(parent, fg_color="transparent")
+        size_row.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(size_row, text="Taille", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 11), width=52, anchor="w").pack(side="left")
+        btn_minus = ctk.CTkButton(size_row, text="−", width=30, height=26,
+                                  fg_color="#2a2a35", hover_color="#3a3a4a",
+                                  text_color="#dddddd",
+                                  command=lambda: self._change_size(-1))
+        btn_minus.pack(side="left")
+        self._sidebar_interactive.append(btn_minus)
+        self.var_size = tk.IntVar(value=cfg.get("font_size", 8))
+        size_entry = ctk.CTkEntry(size_row, textvariable=self.var_size,
+                                  width=46, fg_color="#2a2a35", text_color="#dddddd",
+                                  border_color="#3a3a4a", font=("Courier New", 11))
+        size_entry.pack(side="left", padx=2)
+        self._sidebar_interactive.append(size_entry)
+        btn_plus = ctk.CTkButton(size_row, text="+", width=30, height=26,
+                                 fg_color="#2a2a35", hover_color="#3a3a4a",
+                                 text_color="#dddddd",
+                                 command=lambda: self._change_size(1))
+        btn_plus.pack(side="left", padx=(2, 0))
+        self._sidebar_interactive.append(btn_plus)
+        ctk.CTkLabel(size_row, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 11)).pack(side="left", padx=4)
+
+        # Couleur texte
         color_row = ctk.CTkFrame(parent, fg_color="transparent")
         color_row.pack(fill="x", padx=14, pady=4)
-        ctk.CTkLabel(color_row, text="Couleur",
-                     fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 12), width=60, anchor="w").pack(side="left")
+        ctk.CTkLabel(color_row, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 11), width=52, anchor="w").pack(side="left")
         self.color_swatch = tk.Canvas(color_row, width=26, height=18,
                                       bg=cfg["color_hex"],
                                       highlightthickness=0, cursor="hand2")
@@ -385,77 +704,286 @@ class PDFHeaderApp:
         self.lbl_color_hex.pack(side="left", padx=4)
         self.color_swatch.bind("<Button-1>", self._pick_color)
 
-        size_row = ctk.CTkFrame(parent, fg_color="transparent")
-        size_row.pack(fill="x", padx=14, pady=4)
-        ctk.CTkLabel(size_row, text="Taille",
-                     fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 12), width=60, anchor="w").pack(side="left")
-        btn_minus = ctk.CTkButton(size_row, text="−", width=30, height=26,
-                                  fg_color="#2a2a35", hover_color="#3a3a4a",
-                                  text_color="#dddddd",
-                                  command=lambda: self._change_size(-1))
-        btn_minus.pack(side="left", padx=(0, 2))
-        self._sidebar_interactive.append(btn_minus)
-        self.var_size = tk.IntVar(value=cfg.get("font_size", 8))
-        size_entry = ctk.CTkEntry(size_row, textvariable=self.var_size,
-                     width=46, fg_color="#2a2a35", text_color="#dddddd",
-                     border_color="#3a3a4a",
-                     font=("Courier New", 11))
-        size_entry.pack(side="left")
-        self._sidebar_interactive.append(size_entry)
-        btn_plus = ctk.CTkButton(size_row, text="+", width=30, height=26,
-                                 fg_color="#2a2a35", hover_color="#3a3a4a",
-                                 text_color="#dddddd",
-                                 command=lambda: self._change_size(1))
-        btn_plus.pack(side="left", padx=(2, 0))
-        self._sidebar_interactive.append(btn_plus)
-        ctk.CTkLabel(size_row, text="pts",
-                     fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 11)).pack(side="left", padx=4)
+        # Style : Gras / Italique / Souligné
+        style_row = ctk.CTkFrame(parent, fg_color="transparent")
+        style_row.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(style_row, text="Style", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 11), width=52, anchor="w").pack(side="left")
+        self.var_bold      = tk.BooleanVar(value=cfg.get("bold",      False))
+        self.var_italic    = tk.BooleanVar(value=cfg.get("italic",    False))
+        self.var_underline = tk.BooleanVar(value=cfg.get("underline", False))
+        for lbl, var in [("G", self.var_bold), ("I", self.var_italic), ("S", self.var_underline)]:
+            btn_style = ctk.CTkCheckBox(style_row, text=lbl, variable=var,
+                                        width=42, checkbox_width=20, checkbox_height=20,
+                                        text_color="#dddddd", font=("Segoe UI", 11, "bold"),
+                                        command=self._on_text_change)
+            btn_style.pack(side="left", padx=3)
+            self._sidebar_interactive.append(btn_style)
 
-        # ── Pages ──
-        section("APPLIQUER SUR")
+        # Espacement lettres
+        row_lsp = ctk.CTkFrame(parent, fg_color="transparent")
+        row_lsp.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(row_lsp, text="Esp. lettres", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
+        self.var_letter_spacing = tk.StringVar(value=str(cfg.get("letter_spacing", 0.0)))
+        entry_lsp = ctk.CTkEntry(row_lsp, textvariable=self.var_letter_spacing,
+                                 width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                 border_color="#3a3a4a", font=("Courier New", 11))
+        entry_lsp.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_lsp)
+        ctk.CTkLabel(row_lsp, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        # Espacement lignes
+        row_line = ctk.CTkFrame(parent, fg_color="transparent")
+        row_line.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(row_line, text="Esp. lignes", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
+        self.var_line_spacing = tk.StringVar(value=str(cfg.get("line_spacing", 1.2)))
+        entry_line = ctk.CTkEntry(row_line, textvariable=self.var_line_spacing,
+                                  width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                  border_color="#3a3a4a", font=("Courier New", 11))
+        entry_line.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_line)
+        ctk.CTkLabel(row_line, text="×", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        # ═══════════════════════════════════════════════════════════════
+        # POSITION
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "POSITION")
+
+        ctk.CTkLabel(parent, text="Preset",
+                     fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), anchor="w").pack(anchor="w", padx=14, pady=(6, 2))
+
+        grid_frame = ctk.CTkFrame(parent, fg_color="#1a1a22", corner_radius=6)
+        grid_frame.pack(padx=20, pady=(0, 6), anchor="w")
+        self._preset_buttons = {}
+        for key, (row_n, col_n) in POSITION_PRESETS.items():
+            btn_preset = ctk.CTkButton(grid_frame, text=PRESET_LABELS[key],
+                                       width=44, height=32,
+                                       fg_color="#2a2a35", hover_color="#3a4a6a",
+                                       text_color="#dddddd", font=("Segoe UI", 14),
+                                       corner_radius=4,
+                                       command=lambda k=key: self._on_preset_click(k))
+            btn_preset.grid(row=row_n, column=col_n, padx=2, pady=2)
+            self._preset_buttons[key] = btn_preset
+            self._sidebar_interactive.append(btn_preset)
+
+        # Marges X / Y
+        row_mx = ctk.CTkFrame(parent, fg_color="transparent")
+        row_mx.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(row_mx, text="Marge X", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self.var_margin_x = tk.StringVar(value=str(cfg.get("margin_x_pt", 20.0)))
+        entry_mx = ctk.CTkEntry(row_mx, textvariable=self.var_margin_x,
+                                width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                border_color="#3a3a4a", font=("Courier New", 11))
+        entry_mx.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_mx)
+        ctk.CTkLabel(row_mx, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        row_my = ctk.CTkFrame(parent, fg_color="transparent")
+        row_my.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(row_my, text="Marge Y", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+        self.var_margin_y = tk.StringVar(value=str(cfg.get("margin_y_pt", 20.0)))
+        entry_my = ctk.CTkEntry(row_my, textvariable=self.var_margin_y,
+                                width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                border_color="#3a3a4a", font=("Courier New", 11))
+        entry_my.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_my)
+        ctk.CTkLabel(row_my, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        self.var_margin_x.trace_add("write", lambda *_: self._on_margins_change())
+        self.var_margin_y.trace_add("write", lambda *_: self._on_margins_change())
+
+        # Label position courante
+        self.lbl_pos = ctk.CTkLabel(parent, text="—",
+                                    fg_color="transparent", text_color="#888888",
+                                    font=("Courier New", 11), justify="left", anchor="w")
+        self.lbl_pos.pack(anchor="w", padx=14, pady=(4, 2))
+
+        # ═══════════════════════════════════════════════════════════════
+        # ROTATION
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "ROTATION")
+
+        rotation_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        rotation_frame.pack(fill="x", padx=14, pady=(6, 4))
+        self.var_rotation = tk.IntVar(value=cfg.get("rotation", 0))
+        for angle in [0, 90, 180, 270]:
+            rb = ctk.CTkRadioButton(rotation_frame, text=f"{angle}°",
+                                    variable=self.var_rotation, value=angle,
+                                    text_color="#dddddd", font=("Segoe UI", 11),
+                                    command=self._on_text_change)
+            rb.pack(side="left", padx=6)
+            self._sidebar_interactive.append(rb)
+
+        # ═══════════════════════════════════════════════════════════════
+        # CADRE
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "CADRE")
+
+        self.var_use_frame = tk.BooleanVar(value=cfg.get("use_frame", False))
+        self._cb_frame = ctk.CTkCheckBox(parent, text="Activer le cadre",
+                                         variable=self.var_use_frame,
+                                         text_color="#dddddd", font=("Segoe UI", 12),
+                                         command=self._on_frame_toggle)
+        self._cb_frame.pack(anchor="w", padx=14, pady=(6, 4))
+        self._sidebar_interactive.append(self._cb_frame)
+
+        # Options cadre (masquables)
+        self._frame_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+        row_fc = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+        row_fc.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_fc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.frame_color_swatch = tk.Canvas(row_fc, width=22, height=16,
+                                            bg=cfg.get("frame_color_hex", "#000000"),
+                                            highlightthickness=0, cursor="hand2")
+        self.frame_color_swatch.pack(side="left", padx=4)
+        self.lbl_frame_color = ctk.CTkLabel(row_fc, text=cfg.get("frame_color_hex", "#000000"),
+                                            fg_color="transparent", text_color="#888888",
+                                            font=("Courier New", 10))
+        self.lbl_frame_color.pack(side="left")
+        self.frame_color_swatch.bind("<Button-1>", self._pick_frame_color)
+
+        row_fw = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+        row_fw.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_fw, text="Épaisseur", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_frame_width = tk.StringVar(value=str(cfg.get("frame_width", 1.0)))
+        entry_fw = ctk.CTkEntry(row_fw, textvariable=self.var_frame_width,
+                                width=50, fg_color="#2a2a35", text_color="#dddddd",
+                                border_color="#3a3a4a", font=("Courier New", 11))
+        entry_fw.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_fw)
+        ctk.CTkLabel(row_fw, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        row_fs = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+        row_fs.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_fs, text="Style", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_frame_style = tk.StringVar(value=cfg.get("frame_style", "solid"))
+        opt_fs = ctk.CTkOptionMenu(row_fs, values=["solid", "dashed"],
+                                   variable=self.var_frame_style,
+                                   fg_color="#2a2a35", button_color="#3a3a4a",
+                                   button_hover_color="#4a4a5a", text_color="#dddddd",
+                                   font=("Segoe UI", 11), width=110,
+                                   command=lambda _: self._on_text_change())
+        opt_fs.pack(side="left", padx=4)
+        self._sidebar_interactive.append(opt_fs)
+
+        row_fp = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+        row_fp.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_fp, text="Padding", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_frame_padding = tk.StringVar(value=str(cfg.get("frame_padding", 3.0)))
+        entry_fp = ctk.CTkEntry(row_fp, textvariable=self.var_frame_padding,
+                                width=50, fg_color="#2a2a35", text_color="#dddddd",
+                                border_color="#3a3a4a", font=("Courier New", 11))
+        entry_fp.pack(side="left", padx=4)
+        self._sidebar_interactive.append(entry_fp)
+        ctk.CTkLabel(row_fp, text="pts", fg_color="transparent", text_color="#666677",
+                     font=("Segoe UI", 10)).pack(side="left")
+
+        row_fo = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+        row_fo.pack(fill="x", padx=10, pady=(2, 6))
+        ctk.CTkLabel(row_fo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_frame_opacity = tk.DoubleVar(value=cfg.get("frame_opacity", 1.0))
+        slider_fo = ctk.CTkSlider(row_fo, from_=0.0, to=1.0, variable=self.var_frame_opacity,
+                                  width=110, command=lambda _: self._update_opacity_labels())
+        slider_fo.pack(side="left", padx=4)
+        self._sidebar_interactive.append(slider_fo)
+        self.lbl_frame_opacity = ctk.CTkLabel(
+            row_fo, text=f"{int(cfg.get('frame_opacity', 1.0)*100)}%",
+            fg_color="transparent", text_color="#888888", font=("Courier New", 10))
+        self.lbl_frame_opacity.pack(side="left", padx=2)
+
+        # ═══════════════════════════════════════════════════════════════
+        # FOND
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "FOND")
+
+        self.var_use_bg = tk.BooleanVar(value=cfg.get("use_bg", False))
+        self._cb_bg = ctk.CTkCheckBox(parent, text="Activer le fond",
+                                      variable=self.var_use_bg,
+                                      text_color="#dddddd", font=("Segoe UI", 12),
+                                      command=self._on_bg_toggle)
+        self._cb_bg.pack(anchor="w", padx=14, pady=(6, 4))
+        self._sidebar_interactive.append(self._cb_bg)
+
+        # Options fond (masquables)
+        self._bg_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+        row_bgc = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
+        row_bgc.pack(fill="x", padx=10, pady=2)
+        ctk.CTkLabel(row_bgc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.bg_color_swatch = tk.Canvas(row_bgc, width=22, height=16,
+                                         bg=cfg.get("bg_color_hex", "#FFFFFF"),
+                                         highlightthickness=0, cursor="hand2")
+        self.bg_color_swatch.pack(side="left", padx=4)
+        self.lbl_bg_color = ctk.CTkLabel(row_bgc, text=cfg.get("bg_color_hex", "#FFFFFF"),
+                                         fg_color="transparent", text_color="#888888",
+                                         font=("Courier New", 10))
+        self.lbl_bg_color.pack(side="left")
+        self.bg_color_swatch.bind("<Button-1>", self._pick_bg_color)
+
+        row_bgo = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
+        row_bgo.pack(fill="x", padx=10, pady=(2, 6))
+        ctk.CTkLabel(row_bgo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
+                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_bg_opacity = tk.DoubleVar(value=cfg.get("bg_opacity", 0.8))
+        slider_bgo = ctk.CTkSlider(row_bgo, from_=0.0, to=1.0, variable=self.var_bg_opacity,
+                                   width=110, command=lambda _: self._update_opacity_labels())
+        slider_bgo.pack(side="left", padx=4)
+        self._sidebar_interactive.append(slider_bgo)
+        self.lbl_bg_opacity = ctk.CTkLabel(
+            row_bgo, text=f"{int(cfg.get('bg_opacity', 0.8)*100)}%",
+            fg_color="transparent", text_color="#888888", font=("Courier New", 10))
+        self.lbl_bg_opacity.pack(side="left", padx=2)
+
+        # ═══════════════════════════════════════════════════════════════
+        # APPLIQUER SUR
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "APPLIQUER SUR")
 
         self.var_all_pages = tk.BooleanVar(value=cfg.get("all_pages", True))
         pages_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        pages_frame.pack(fill="x", padx=14, pady=4)
-
-        for text, val in [("Toutes les pages", True), ("Première page", False)]:
+        pages_frame.pack(fill="x", padx=14, pady=(6, 4))
+        for text, val in [("Toutes les pages", True), ("Première page uniquement", False)]:
             rb = ctk.CTkRadioButton(pages_frame, text=text,
                                     variable=self.var_all_pages, value=val,
-                                    text_color="#dddddd",
-                                    font=("Segoe UI", 12))
-            rb.pack(anchor="w", pady=1)
+                                    text_color="#dddddd", font=("Segoe UI", 12))
+            rb.pack(anchor="w", pady=2)
             self._sidebar_interactive.append(rb)
 
-        # ── Position mémorisée ──
-        section("POSITION MÉMORISÉE")
-        self.lbl_pos = ctk.CTkLabel(parent, text="—",
-                                    fg_color="transparent", text_color="#888888",
-                                    font=("Courier New", 11),
-                                    justify="left", anchor="w")
-        self.lbl_pos.pack(anchor="w", padx=14, pady=4)
-        ctk.CTkLabel(parent,
-                     text="Cliquez sur la page pour\ndéplacer l'en-tête",
-                     fg_color="transparent", text_color="#444455",
-                     font=("Segoe UI", 10),
-                     justify="left", anchor="w").pack(anchor="w", padx=14)
+        # ═══════════════════════════════════════════════════════════════
+        # APERÇU
+        # ═══════════════════════════════════════════════════════════════
+        self._section(parent, "APERÇU")
+        self.lbl_preview = ctk.CTkLabel(parent, text="",
+                                        fg_color="#1a1a22", text_color="#e05555",
+                                        font=("Courier New", 10),
+                                        wraplength=230, justify="left",
+                                        anchor="w", corner_radius=4)
+        self.lbl_preview.pack(fill="x", padx=14, pady=6)
+        ctk.CTkFrame(parent, fg_color="transparent", height=20).pack()
 
-        self._on_mode_change()
-        self._update_pos_label()
-
-    def _make_entry(self, parent, var, placeholder):
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", padx=28, pady=1)
-        entry = ctk.CTkEntry(frame, textvariable=var,
-                     placeholder_text=placeholder,
-                     placeholder_text_color="#555566",
-                     fg_color="#2a2a35", text_color="#dddddd",
-                     border_color="#3a3a4a",
-                     font=("Courier New", 11))
-        entry.pack(fill="x")
-        self._sidebar_interactive.append(entry)
-        return frame
+        # ── Synchronisation initiale des sections masquables ──
+        self._update_date_options_visibility()
+        self._update_frame_options_visibility()
+        self._update_bg_options_visibility()
+        self._update_preset_highlight()
+        self._on_text_change()
 
     # -------------------------------------------------- Panneau fichiers ---
 
@@ -487,10 +1015,8 @@ class PDFHeaderApp:
             frame.destroy()
         self.file_card_frames = {}
         self.file_card_badges = {}
-
         for i, path in enumerate(self.pdf_files):
             self._create_file_card(i, path)
-
         self._refresh_file_counter()
 
     def _create_file_card(self, idx, path):
@@ -637,61 +1163,227 @@ class PDFHeaderApp:
         self._hide_welcome_screen()
         self._load_pdf()
 
-    # --------------------------------------------------------- Logique texte ---
+    # ------------------------------------------- Callbacks sidebar texte ---
 
-    def _get_header_text(self, filename=""):
-        mode = self.text_mode.get()
-        name = filename or (self.pdf_files[self.idx].name if self.pdf_files else "fichier.pdf")
-        pfx  = self.var_prefixe.get()
-        sfx  = self.var_suffixe.get()
-        cst  = self.var_custom.get()
-
-        # Ignorer les placeholders
-        for ph in ["ex: CONFIDENTIEL –", "ex: – DRAFT", "ex: Société XYZ"]:
-            if pfx == ph: pfx = ""
-            if sfx == ph: sfx = ""
-            if cst == ph: cst = ""
-
-        if mode == "nom":     return name
-        if mode == "prefixe": return f"{pfx} {name}".strip() if pfx else name
-        if mode == "suffixe": return f"{name} {sfx}".strip() if sfx else name
-        if mode == "custom":  return cst if cst else name
-        return name
-
-    def _change_size(self, delta):
-        val = max(4, min(72, self.var_size.get() + delta))
-        self.var_size.set(val)
-        self._on_mode_change()
-
-    def _on_mode_change(self, *_):
+    def _on_text_change(self, *_):
+        """Rafraîchit l'aperçu texte et le canvas overlay."""
         self.lbl_preview.configure(text=self._get_header_text())
         self._draw_overlay()
 
-    # --------------------------------------------------------- Couleur --------
+    def _on_use_custom_change(self, *_):
+        """Quand 'Texte personnalisé' est activé, désactive 'Nom du fichier'."""
+        if self.var_use_custom.get():
+            self.var_use_filename.set(False)
+        self._on_text_change()
+
+    def _on_date_toggle(self, *_):
+        self._update_date_options_visibility()
+        self._on_text_change()
+
+    def _update_date_options_visibility(self):
+        if self.var_use_date.get():
+            self._date_options_frame.pack(fill="x", padx=4, after=self._cb_date)
+        else:
+            self._date_options_frame.pack_forget()
+
+    def _on_date_format_change(self, display_value: str):
+        fmt = self._date_format_map.get(display_value, "%d/%m/%Y")
+        self.var_date_format.set(fmt)
+        self._on_text_change()
+
+    def _on_frame_toggle(self, *_):
+        self._update_frame_options_visibility()
+        self._on_text_change()
+
+    def _update_frame_options_visibility(self):
+        if self.var_use_frame.get():
+            self._frame_options_frame.pack(fill="x", padx=4, after=self._cb_frame)
+        else:
+            self._frame_options_frame.pack_forget()
+
+    def _on_bg_toggle(self, *_):
+        self._update_bg_options_visibility()
+        self._on_text_change()
+
+    def _update_bg_options_visibility(self):
+        if self.var_use_bg.get():
+            self._bg_options_frame.pack(fill="x", padx=4, after=self._cb_bg)
+        else:
+            self._bg_options_frame.pack_forget()
+
+    def _update_opacity_labels(self):
+        try:
+            self.lbl_frame_opacity.configure(text=f"{int(self.var_frame_opacity.get()*100)}%")
+            self.lbl_bg_opacity.configure(text=f"{int(self.var_bg_opacity.get()*100)}%")
+        except Exception:
+            pass
+        self._draw_overlay()
+
+    def _on_font_change(self, font_name: str):
+        if font_name in self._system_fonts:
+            self.cfg["font_file"] = str(self._system_fonts[font_name])
+        else:
+            self.cfg["font_file"] = None
+        self._on_text_change()
+
+    # --------------------------------------------------- Couleurs (picks) ---
 
     def _pick_color(self, _=None):
-        color = colorchooser.askcolor(
-            color=self.cfg["color_hex"],
-            title="Choisir la couleur de l'en-tête"
-        )
+        color = colorchooser.askcolor(color=self.cfg["color_hex"],
+                                      title="Couleur du texte")
         if color and color[1]:
             self.cfg["color_hex"] = color[1].upper()
             self.color_swatch.config(bg=self.cfg["color_hex"])
             self.lbl_color_hex.configure(text=self.cfg["color_hex"])
             self._draw_overlay()
 
-    # --------------------------------------------------------- PDF courant ----
+    def _pick_frame_color(self, _=None):
+        color = colorchooser.askcolor(color=self.cfg.get("frame_color_hex", "#000000"),
+                                      title="Couleur du cadre")
+        if color and color[1]:
+            self.cfg["frame_color_hex"] = color[1].upper()
+            self.frame_color_swatch.config(bg=self.cfg["frame_color_hex"])
+            self.lbl_frame_color.configure(text=self.cfg["frame_color_hex"])
+            self._draw_overlay()
+
+    def _pick_bg_color(self, _=None):
+        color = colorchooser.askcolor(color=self.cfg.get("bg_color_hex", "#FFFFFF"),
+                                      title="Couleur du fond")
+        if color and color[1]:
+            self.cfg["bg_color_hex"] = color[1].upper()
+            self.bg_color_swatch.config(bg=self.cfg["bg_color_hex"])
+            self.lbl_bg_color.configure(text=self.cfg["bg_color_hex"])
+            self._draw_overlay()
+
+    def _change_size(self, delta):
+        val = max(4, min(72, self.var_size.get() + delta))
+        self.var_size.set(val)
+        self._on_text_change()
+
+    # ----------------------------------------------- Presets de position ---
+
+    def _on_preset_click(self, preset_key: str):
+        self.preset_position = preset_key
+        self._recalc_ratio_from_preset()
+        self._update_preset_highlight()
+        self._update_pos_label()
+        self._draw_overlay()
+
+    def _recalc_ratio_from_preset(self):
+        """Recalcule pos_ratio_x/y depuis le preset actif et les marges."""
+        if self.preset_position == "custom":
+            return
+        if self.preset_position not in POSITION_PRESETS:
+            return
+        try:
+            mx = float(self.var_margin_x.get())
+            my = float(self.var_margin_y.get())
+        except (ValueError, AttributeError):
+            mx, my = 20.0, 20.0
+        pw = max(self.page_w_pt, 1.0)
+        ph = max(self.page_h_pt, 1.0)
+        row_n, col_n = POSITION_PRESETS[self.preset_position]
+        if col_n == 0:
+            rx = mx / pw
+        elif col_n == 1:
+            rx = 0.5
+        else:
+            rx = 1.0 - mx / pw
+        if row_n == 0:
+            ry = my / ph
+        elif row_n == 1:
+            ry = 0.5
+        else:
+            ry = 1.0 - my / ph
+        self.pos_ratio_x = max(0.01, min(0.99, rx))
+        self.pos_ratio_y = max(0.01, min(0.99, ry))
+
+    def _on_margins_change(self, *_):
+        """Recalcule la position si on est en mode preset."""
+        if self.preset_position != "custom":
+            self._recalc_ratio_from_preset()
+            self._update_pos_label()
+            self._draw_overlay()
+
+    def _update_preset_highlight(self):
+        """Met en surbrillance le bouton preset actif."""
+        if not hasattr(self, "_preset_buttons"):
+            return
+        for key, btn in self._preset_buttons.items():
+            if key == self.preset_position:
+                btn.configure(fg_color="#2a4a7a", text_color="#aac4ff")
+            else:
+                btn.configure(fg_color="#2a2a35", text_color="#dddddd")
+
+    # ----------------------------------------------- Composition du texte ---
+
+    def _get_header_text(self) -> str:
+        """Assemble le texte d'en-tête selon les options actives."""
+        # Base
+        if self.var_use_custom.get():
+            base = self.var_custom_text.get().strip()
+        elif self.var_use_filename.get():
+            if self.pdf_files and self.idx < len(self.pdf_files):
+                base = self.pdf_files[self.idx].stem
+            else:
+                base = "fichier"
+        else:
+            base = ""
+
+        # Date
+        date_str = ""
+        if self.var_use_date.get():
+            fmt    = self.var_date_format.get() or "%d/%m/%Y"
+            source = self.var_date_source.get()
+            if source == "file_mtime" and self.pdf_files and self.idx < len(self.pdf_files):
+                try:
+                    mtime = self.pdf_files[self.idx].stat().st_mtime
+                    dt    = datetime.datetime.fromtimestamp(mtime)
+                except Exception:
+                    dt = datetime.datetime.today()
+            else:
+                dt = datetime.datetime.today()
+            try:
+                date_str = dt.strftime(fmt)
+            except Exception:
+                date_str = dt.strftime("%d/%m/%Y")
+
+        # Assemblage
+        prefix_parts = []
+        if date_str and self.var_date_position.get() == "prefix":
+            prefix_parts.append(date_str)
+        if self.var_use_prefix.get():
+            pfx = self.var_prefix_text.get().strip()
+            if pfx:
+                prefix_parts.append(pfx)
+
+        suffix_parts = []
+        if self.var_use_suffix.get():
+            sfx = self.var_suffix_text.get().strip()
+            if sfx:
+                suffix_parts.append(sfx)
+        if date_str and self.var_date_position.get() == "suffix":
+            suffix_parts.append(date_str)
+
+        parts = prefix_parts + ([base] if base else []) + suffix_parts
+        return " ".join(parts).strip()
+
+    # --------------------------------------------------------- PDF courant ---
 
     def _load_pdf(self):
         path = self.pdf_files[self.idx]
         self.lbl_filename.configure(text=f"  {path.name}  ")
-        self.lbl_progress.configure(
-            text=f"  {self.idx + 1} / {len(self.pdf_files)}  "
-        )
+        self.lbl_progress.configure(text=f"  {self.idx + 1} / {len(self.pdf_files)}  ")
         if self.doc:
             self.doc.close()
         self.doc = fitz.open(str(path))
-        self._on_mode_change()
+        # Lire les dims dès maintenant pour _recalc_ratio_from_preset()
+        page0 = self.doc[0]
+        self.page_w_pt = page0.rect.width
+        self.page_h_pt = page0.rect.height
+        self._recalc_ratio_from_preset()
+        self._update_pos_label()
+        self._on_text_change()
         self._render_preview()
         self._refresh_all_cards()
 
@@ -739,7 +1431,7 @@ class PDFHeaderApp:
             return
         self.canvas.delete("overlay")
 
-        # Croix de guidage
+        # Croix de guidage au survol
         if hover_cx is not None:
             x0 = self.img_offset_x
             x1 = self.img_offset_x + self.page_w_px
@@ -750,35 +1442,84 @@ class PDFHeaderApp:
             self.canvas.create_line(hover_cx, y0, hover_cx, y1,
                                     fill="#5577ee", width=1, dash=(4,4), tags="overlay")
 
-        # Texte positionné
-        cx, cy = self._ratio_to_canvas(self.pos_ratio_x, self.pos_ratio_y)
-        text   = self._get_header_text()
-        size   = max(self.var_size.get(), 4)
-        fpx    = max(int(size * self.scale * 1.1), 7)
+        cx, cy  = self._ratio_to_canvas(self.pos_ratio_x, self.pos_ratio_y)
+        text    = self._get_header_text()
+        size    = max(self.var_size.get(), 4)
+        fpx     = max(int(size * self.scale * 1.1), 7)
+        color   = self.cfg.get("color_hex", "#FF0000")
+        rotation = self.var_rotation.get()
 
-        self.canvas.create_text(
-            cx, cy, text=text,
-            anchor="sw",
-            fill=self.cfg["color_hex"],
-            font=("Courier New", fpx, "bold"),
-            tags="overlay"
-        )
-        # Petite croix de repère
+        # Police canvas (approximation)
+        font_family = self.var_font_family.get()
+        style_parts = []
+        if self.var_bold.get():
+            style_parts.append("bold")
+        if self.var_italic.get():
+            style_parts.append("italic")
+        style_str = " ".join(style_parts) if style_parts else "normal"
+        canvas_font_map = {
+            "Courier": "Courier New",
+            "Helvetica": "Helvetica",
+            "Times": "Times New Roman"
+        }
+        canvas_font_name = canvas_font_map.get(font_family, font_family)
+        canvas_font = (canvas_font_name, fpx, style_str)
+
+        # Fond et cadre approximatifs (avant le texte)
+        if self.var_use_bg.get() or self.var_use_frame.get():
+            approx_w = max(len(text) * fpx * 0.65, 20)
+            approx_h = fpx * 1.4
+            try:
+                pad_px = max(2, int(float(self.var_frame_padding.get()) * self.scale))
+            except (ValueError, AttributeError):
+                pad_px = 2
+            bg_x0 = cx - pad_px
+            bg_y0 = cy - approx_h - pad_px
+            bg_x1 = cx + approx_w + pad_px
+            bg_y1 = cy + pad_px
+            if self.var_use_bg.get():
+                bg_col = self.cfg.get("bg_color_hex", "#FFFFFF")
+                self.canvas.create_rectangle(bg_x0, bg_y0, bg_x1, bg_y1,
+                                             fill=bg_col, outline="", tags="overlay")
+            if self.var_use_frame.get():
+                fc_hex = self.cfg.get("frame_color_hex", "#000000")
+                try:
+                    fw_px = max(1, int(float(self.var_frame_width.get()) * self.scale))
+                except (ValueError, AttributeError):
+                    fw_px = 1
+                f_dash = (4, 4) if self.var_frame_style.get() == "dashed" else ()
+                self.canvas.create_rectangle(bg_x0, bg_y0, bg_x1, bg_y1,
+                                             outline=fc_hex, width=fw_px,
+                                             dash=f_dash, fill="", tags="overlay")
+
+        # Texte avec rotation
+        try:
+            self.canvas.create_text(cx, cy, text=text, anchor="sw",
+                                    fill=color, font=canvas_font,
+                                    angle=rotation, tags="overlay")
+        except tk.TclError:
+            self.canvas.create_text(cx, cy, text=text, anchor="sw",
+                                    fill=color, font=canvas_font, tags="overlay")
+
+        # Soulignement approximatif (uniquement si rotation == 0)
+        if self.var_underline.get() and rotation == 0:
+            approx_w = max(len(text) * fpx * 0.65, 20)
+            ul_y = cy + max(1, int(fpx * 0.12))
+            self.canvas.create_line(cx, ul_y, cx + approx_w, ul_y,
+                                    fill=color, width=max(1, int(fpx * 0.06)),
+                                    tags="overlay")
+
+        # Croix de repère
         r = 5
-        self.canvas.create_line(cx-r, cy, cx+r, cy, fill=self.cfg["color_hex"],
-                                 width=1, tags="overlay")
-        self.canvas.create_line(cx, cy-r, cx, cy+r, fill=self.cfg["color_hex"],
-                                 width=1, tags="overlay")
+        self.canvas.create_line(cx-r, cy, cx+r, cy, fill=color, width=1, tags="overlay")
+        self.canvas.create_line(cx, cy-r, cx, cy+r, fill=color, width=1, tags="overlay")
 
     # --------------------------------------------------------- Interactions ---
 
     def _canvas_to_ratio(self, cx, cy):
-        """Canvas pixels → ratio (0-1) sur la page."""
-        rx = (cx - self.img_offset_x) / self.page_w_px
-        ry = (cy - self.img_offset_y) / self.page_h_px
-        rx = max(0.0, min(1.0, rx))
-        ry = max(0.0, min(1.0, ry))
-        return rx, ry
+        rx = (cx - self.img_offset_x) / max(self.page_w_px, 1)
+        ry = (cy - self.img_offset_y) / max(self.page_h_px, 1)
+        return max(0.0, min(1.0, rx)), max(0.0, min(1.0, ry))
 
     def _ratio_to_canvas(self, rx, ry):
         cx = self.img_offset_x + rx * self.page_w_px
@@ -795,6 +1536,9 @@ class PDFHeaderApp:
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         self.pos_ratio_x = rx
         self.pos_ratio_y = ry
+        # Passer en mode "Personnalisée"
+        self.preset_position = "custom"
+        self._update_preset_highlight()
         fname = self.pdf_files[self.idx].name if self.pdf_files else "?"
         _debug_log(
             f"CLICK [{fname}] canvas=({event.x},{event.y}) "
@@ -808,20 +1552,22 @@ class PDFHeaderApp:
 
     def _on_motion(self, event):
         self._draw_overlay(hover_cx=event.x, hover_cy=event.y)
-        # Coordonnées en points PDF
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         x_pt, y_pt = self._ratio_to_pdf_pt(rx, ry)
         self.lbl_coords.configure(text=f"x: {x_pt:.0f} pts  ·  y: {y_pt:.0f} pts")
 
     def _update_pos_label(self):
         x_pt, y_pt = self._ratio_to_pdf_pt(self.pos_ratio_x, self.pos_ratio_y)
-        self.lbl_pos.configure(text=f"x : {x_pt:.0f} pts\ny : {y_pt:.0f} pts")
+        preset_label = PRESET_LABELS.get(self.preset_position, "libre")
+        self.lbl_pos.configure(
+            text=f"[{preset_label}]  x: {x_pt:.0f} pts  y: {y_pt:.0f} pts"
+        )
 
-    # --------------------------------------------------------- Actions --------
+    # ------------------------------------------------------------ Actions ---
 
     def _apply(self):
-        path = self.pdf_files[self.idx]
-        out_dir = path.parent.with_name(path.parent.name + "_avec_entete")
+        path     = self.pdf_files[self.idx]
+        out_dir  = path.parent.with_name(path.parent.name + "_avec_entete")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / path.name
 
@@ -829,49 +1575,186 @@ class PDFHeaderApp:
         color_float = hex_to_rgb_float(self.cfg["color_hex"])
         font_size   = max(self.var_size.get(), 4)
         all_pages   = self.var_all_pages.get()
-        x_pt, y_pt  = self._ratio_to_pdf_pt(self.pos_ratio_x, self.pos_ratio_y)
+        rotation    = self.var_rotation.get()
+        x_pt, y_pt = self._ratio_to_pdf_pt(self.pos_ratio_x, self.pos_ratio_y)
+
+        font_family = self.var_font_family.get()
+        font_file   = self.cfg.get("font_file")
+        bold        = self.var_bold.get()
+        italic      = self.var_italic.get()
+        underline   = self.var_underline.get()
+        font_args   = _get_fitz_font_args(font_family, font_file, bold, italic)
+
+        try:
+            line_spacing = max(0.5, float(self.var_line_spacing.get()))
+        except (ValueError, AttributeError):
+            line_spacing = 1.2
+
+        use_frame     = self.var_use_frame.get()
+        frame_color   = hex_to_rgb_float(self.cfg.get("frame_color_hex", "#000000"))
+        try:
+            frame_width = max(0.1, float(self.var_frame_width.get()))
+        except (ValueError, AttributeError):
+            frame_width = 1.0
+        frame_style   = self.var_frame_style.get()
+        try:
+            frame_padding = max(0.0, float(self.var_frame_padding.get()))
+        except (ValueError, AttributeError):
+            frame_padding = 3.0
+        frame_opacity = max(0.0, min(1.0, self.var_frame_opacity.get()))
+
+        use_bg     = self.var_use_bg.get()
+        bg_color   = hex_to_rgb_float(self.cfg.get("bg_color_hex", "#FFFFFF"))
+        bg_opacity = max(0.0, min(1.0, self.var_bg_opacity.get()))
 
         try:
             doc_out = fitz.open(str(path))
             pages_to_process = range(len(doc_out)) if all_pages else [0]
+
             _debug_log(
                 f"APPLY [{path.name}] ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
-                f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
-                f"x_pt={x_pt:.1f} y_pt={y_pt:.1f}"
+                f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} rotation={rotation} font={font_family}"
             )
+
             for i in pages_to_process:
-                pg = doc_out[i]
-                fitz_pt = fitz.Point(x_pt, pg.rect.height - y_pt)
-                _debug_log(
-                    f"  page[{i}] rect=({pg.rect.width:.1f}x{pg.rect.height:.1f}) "
-                    f"fitz.Point=({fitz_pt.x:.1f},{fitz_pt.y:.1f})"
+                pg   = doc_out[i]
+                pg_w = pg.rect.width
+                pg_h = pg.rect.height
+                # Conversion Y : fitz (Y=0 en haut)
+                fitz_y = pg_h - y_pt
+
+                # Estimation largeur texte pour fond/cadre/soulignement
+                text_width = len(header_text) * font_size * 0.6  # fallback
+                if use_bg or use_frame or underline:
+                    try:
+                        if "fontfile" in font_args:
+                            font_obj = fitz.Font(fontfile=font_args["fontfile"])
+                        else:
+                            font_obj = fitz.Font(fontname=font_args.get("fontname", "cour"))
+                        text_width = font_obj.text_length(header_text, font_size)
+                    except Exception:
+                        pass
+
+                # Fond et cadre (avant le texte)
+                if use_bg or use_frame:
+                    pad = frame_padding
+                    bg_rect = fitz.Rect(
+                        x_pt - pad,
+                        fitz_y - font_size * 1.2 - pad,
+                        x_pt + text_width + pad,
+                        fitz_y + pad
+                    )
+                    if use_bg:
+                        pg.draw_rect(bg_rect,
+                                     fill=bg_color,
+                                     fill_opacity=bg_opacity,
+                                     color=None,
+                                     width=0)
+                    if use_frame:
+                        dashes = "[3 3] 0" if frame_style == "dashed" else None
+                        pg.draw_rect(bg_rect,
+                                     color=frame_color,
+                                     width=frame_width,
+                                     stroke_opacity=frame_opacity,
+                                     fill=None,
+                                     dashes=dashes)
+
+                # Rect d'insertion du texte
+                lineheight = font_size * line_spacing
+                text_rect  = fitz.Rect(
+                    x_pt,
+                    fitz_y - font_size * 2.0,
+                    x_pt + max(pg_w - x_pt, 10),
+                    fitz_y + font_size * 0.5
                 )
-                pg.insert_text(
-                    fitz_pt,
+                _debug_log(
+                    f"  page[{i}] pg=({pg_w:.1f}x{pg_h:.1f}) "
+                    f"fitz_y={fitz_y:.1f} text_rect={text_rect}"
+                )
+
+                pg.insert_textbox(
+                    text_rect,
                     header_text,
-                    fontname="cour",
                     fontsize=font_size,
                     color=color_float,
+                    rotate=rotation,
+                    lineheight=lineheight,
+                    align=fitz.TEXT_ALIGN_LEFT,
+                    **font_args,
                 )
+
+                # Soulignement
+                if underline:
+                    ul_y = fitz_y + font_size * 0.15
+                    pg.draw_line(
+                        fitz.Point(x_pt, ul_y),
+                        fitz.Point(x_pt + text_width, ul_y),
+                        color=color_float,
+                        width=max(0.5, font_size * 0.05)
+                    )
+
             doc_out.save(str(out_path), garbage=4, deflate=True)
             doc_out.close()
+
+        except PermissionError:
+            messagebox.showerror("Erreur",
+                "Le fichier est ouvert dans un autre programme. Fermez-le et réessayez.")
+            self.file_states[self.idx] = "erreur"
+            self._refresh_all_cards()
+            return
         except Exception as e:
             messagebox.showerror("Erreur", str(e))
             self.file_states[self.idx] = "erreur"
             self._refresh_all_cards()
             return
 
-        # Sauvegarder la config
+        # Sauvegarde config
+        try:
+            letter_spacing = float(self.var_letter_spacing.get())
+        except (ValueError, AttributeError):
+            letter_spacing = 0.0
+        try:
+            margin_x = float(self.var_margin_x.get())
+            margin_y = float(self.var_margin_y.get())
+        except (ValueError, AttributeError):
+            margin_x, margin_y = 20.0, 20.0
+
         self.cfg.update({
-            "text_mode"   : self.text_mode.get(),
-            "prefixe"     : self.var_prefixe.get(),
-            "suffixe"     : self.var_suffixe.get(),
-            "custom"      : self.var_custom.get(),
-            "color_hex"   : self.cfg["color_hex"],
-            "font_size"   : font_size,
-            "all_pages"   : all_pages,
-            "last_x_ratio": self.pos_ratio_x,
-            "last_y_ratio": self.pos_ratio_y,
+            "use_filename":    self.var_use_filename.get(),
+            "use_prefix":      self.var_use_prefix.get(),
+            "prefix_text":     self.var_prefix_text.get(),
+            "use_suffix":      self.var_use_suffix.get(),
+            "suffix_text":     self.var_suffix_text.get(),
+            "use_custom":      self.var_use_custom.get(),
+            "custom_text":     self.var_custom_text.get(),
+            "use_date":        self.var_use_date.get(),
+            "date_position":   self.var_date_position.get(),
+            "date_source":     self.var_date_source.get(),
+            "date_format":     self.var_date_format.get(),
+            "font_family":     self.var_font_family.get(),
+            "font_size":       font_size,
+            "bold":            bold,
+            "italic":          italic,
+            "underline":       underline,
+            "letter_spacing":  letter_spacing,
+            "line_spacing":    line_spacing,
+            "color_hex":       self.cfg["color_hex"],
+            "preset_position": self.preset_position,
+            "margin_x_pt":     margin_x,
+            "margin_y_pt":     margin_y,
+            "last_x_ratio":    self.pos_ratio_x,
+            "last_y_ratio":    self.pos_ratio_y,
+            "rotation":        rotation,
+            "use_frame":       use_frame,
+            "frame_color_hex": self.cfg.get("frame_color_hex", "#000000"),
+            "frame_width":     frame_width,
+            "frame_style":     frame_style,
+            "frame_padding":   frame_padding,
+            "frame_opacity":   frame_opacity,
+            "use_bg":          use_bg,
+            "bg_color_hex":    self.cfg.get("bg_color_hex", "#FFFFFF"),
+            "bg_opacity":      bg_opacity,
+            "all_pages":       all_pages,
         })
         save_config(self.cfg)
 
@@ -903,7 +1786,6 @@ def main():
     print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
     check_update()
 
-    # Collecte des PDFs si passés en argument
     pdf_files = []
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
@@ -917,8 +1799,8 @@ def main():
         print(f"{len(pdf_files)} fichier(s) PDF trouvé(s).")
 
     root = ctk.CTk()
-    root.geometry("1050x750")
-    app = PDFHeaderApp(root, pdf_files)  # liste vide → écran d'accueil
+    root.geometry("1100x780")
+    app = PDFHeaderApp(root, pdf_files)
     root.mainloop()
 
 if __name__ == "__main__":

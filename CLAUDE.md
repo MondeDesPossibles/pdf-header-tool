@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
-# Version : 0.3.0
-# Build   : build-2026.02.20.19
+# Version : 0.4.0
+# Build   : build-2026.02.20.20
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -42,26 +42,45 @@ pdf-header-tool/
 - Constante `VERSION` en tête du script + `GITHUB_REPO`
 - Mise à jour silencieuse : télécharge le nouveau `pdf_header.py` et remplace le fichier courant
 
+### Constantes et fonctions module-level (v0.4.0)
+- `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
+- `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
+- `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
+- `DATE_FORMATS` : 8 formats de date prédéfinis `[(strftime_str, exemple), ...]`
+- `_get_font_dirs()` : retourne les dossiers de polices selon la plateforme
+- `_find_priority_fonts()` : lookup ciblé (pas de scan exhaustif) → `{display_name: Path}`
+- `_get_fitz_font_args(family, font_file, bold, italic)` : retourne `{"fontname": "cour"}` (built-in) ou `{"fontfile": str(path), "fontname": "F0"}` (système)
+
 ### Config persistante
 - Fichier : `pdf_header_config.json` dans `INSTALL_DIR`
-- Clés : `text_mode`, `prefixe`, `suffixe`, `custom`, `color_hex`, `font_size`, `all_pages`, `last_x_ratio`, `last_y_ratio`, `ui_font_size`, `debug_enabled`
+- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `debug_enabled`
+- Migration automatique depuis le format < v0.4.0 : ancienne clé `text_mode` → nouvelles clés `use_filename`/`use_custom` etc. (dans `load_config()`)
 - La position est stockée en **ratio (0.0 à 1.0)** de la page pour être indépendante de la résolution
 
 ### Classe PDFHeaderApp
 Interface principale. Cycle de vie :
-1. `__init__` → `_build_ui()` → `_load_pdf()`
+1. `__init__` → `_load_system_fonts()` → `_build_ui()` → `_load_pdf()`
 2. Pour chaque PDF : rendu via PyMuPDF → `_render_preview()` → interaction souris → `_apply()` ou `_skip()`
 3. `_apply()` : écrit le PDF dans `<dossier_source>_avec_entete/<meme_nom>.pdf`
 
 **Méthodes clés :**
-- `_build_ui()` : construit topbar + sidebar + canvas + bottombar
-- `_build_sidebar()` : options texte, color picker, taille, toggle pages
+- `_load_system_fonts()` : cherche les polices PRIORITY_FONTS sur disque, **doit être appelée avant `_build_ui()`**
+- `_build_ui()` : construit topbar + sidebar scrollable (`CTkScrollableFrame` dans outer frame 270px) + canvas + bottombar
+- `_section(parent, label)` : crée un header de section ALLCAPS dans la sidebar (converti de closure en méthode)
+- `_build_sidebar(parent)` : 9 sections — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION (grille 3×3), ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU
 - `_render_preview()` : convertit page PDF → image PIL → ImageTk, calcule scale + offsets
-- `_draw_overlay()` : dessine croix de guidage + aperçu texte sur le canvas
-- `_on_click()` : stocke la position en ratio X/Y
+- `_draw_overlay()` : dessine croix + aperçu texte avec rotation/bg/cadre approximatifs sur le canvas
+- `_on_click()` : stocke la position en ratio X/Y, puis `preset_position = "custom"`
 - `_on_motion()` : rafraîchit l'overlay + affiche coordonnées en pts PDF
-- `_apply()` : appelle `fitz.Page.insert_text()` avec police "cour" (Courier), sauvegarde config
-- `_get_header_text()` : retourne le texte à injecter (sans extension .pdf)
+- `_apply()` : utilise `fitz.Page.insert_textbox()` avec `lineheight`, bg rect, frame rect, underline, rotation
+- `_get_header_text()` : assemble `[date_prefix] [prefix] [stem|custom] [suffix] [date_suffix]` — utilise `path.stem` (sans extension)
+- `_on_preset_click(key)` / `_recalc_ratio_from_preset()` : gestion grille 3×3 + calcul ratio depuis marges
+- `_on_margins_change()` : trace sur `var_margin_x/y` → recalcule si preset actif
+- `_update_preset_highlight()` : surligne le bouton preset actif en bleu
+- `_on_text_change()` : recalcule le texte et rafraîchit l'overlay
+- `_update_date_options_visibility()` / `_update_frame_options_visibility()` / `_update_bg_options_visibility()` : masque/affiche les sous-sections avec `pack_forget()` / `pack(after=ref_widget)`
+- `_pick_frame_color()` / `_pick_bg_color()` : sélecteur de couleur tkinter
+- `_on_font_change(font_name)` : met à jour `cfg["font_file"]` selon la police sélectionnée
 
 **Coordonnées :**
 - Canvas tkinter : origine haut-gauche, Y croît vers le bas
@@ -177,6 +196,10 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
 - `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
 - `install.bat` : logique simplifiée (détection `python --version`, redirection vers python.org si Python absent ou Store)
+- `letter_spacing` (v0.4.0) : stocké en config mais **non appliqué au PDF** — `insert_textbox()` n'a pas de paramètre charspacing natif ; sera implémenté via `TextWriter` à l'Étape 11
+- `angle=rotation` sur `canvas.create_text()` → protégé dans `try/except tk.TclError` pour compatibilité Tk 8.6+
+- Frames masquables (date/cadre/fond) : réinsertion via `pack(after=ref_widget)` et non `pack()` seul pour éviter le déplacement en fin de sidebar
+- Champs numériques marge/épaisseur : `tk.StringVar` (pas `DoubleVar`) pour éviter `TclError` quand l'utilisateur vide le champ — valeur parsée avec `try/float()` + fallback
 
 ---
 
