@@ -5,24 +5,42 @@ Chaque étape doit être validée avant de passer à la suivante.
 
 ---
 
-## Correctifs appliqués (hors étapes)
+## Cadre de versionnement (reset)
 
-### install.bat — v1.0.0 (correctif)
-**Statut : Terminé ✓** — commit sur main, tag v1.0.0 mis à jour
+- Point de départ de reprise : `v0.0.1`
+- Objectif de cette roadmap : livrer une release fonctionnelle `v1.0.0`
+- Principe : appliquer les étapes dans l'ordre, avec incrément de version à chaque étape
+- Jalons :
+  - Étape 1 -> `v0.1.0`
+  - Étape 2 -> `v0.2.0`
+  - Étape 3 -> `v0.3.0`
+  - Étape 4 -> `v0.4.0`
+  - Étape 5 -> `v0.5.0`
+  - Étape 6 -> `v0.6.0`
+  - Étape 7 -> `v0.7.0`
+  - Étape 8 -> `v0.8.0`
+  - Étape 9 -> `v0.9.0`
+  - Étape 10 -> `v1.0.0` (release cible)
+  - Étapes 11+ -> post-`1.0.0`
+
+---
+
+## Base de départ (hors étapes)
+
+### install.bat — v0.0.1 (baseline)
+**Statut : Terminé ✓** — point de départ avant reprise des étapes roadmap
 
 - Encodage console : ajout `chcp 65001`, suppression des caractères Unicode dans les `echo`
-- Téléchargement Python : remplacement de `Invoke-WebRequest` par une cascade de 3 méthodes
-  (`curl.exe` → `PowerShell WebClient` → `Invoke-WebRequest`)
-- Vérification version Python minimale (3.8+)
-- Détection Python dans les chemins courants si absent du PATH
-- Vérification intégrité du fichier téléchargé (taille > 1 Mo)
-- Log complet dans `%TEMP%\pdf_header_install.log` avec horodatage
+- Vérification Python simplifiée via `python --version`
+- Si Python absent : menu (ouvrir python.org ou téléchargement auto via `curl.exe`)
+- Téléchargement Python via `curl.exe` avec retries et vérification d'intégrité (taille > 1 Mo)
+- Log complet dans `pdf_header_install.log` (dossier de `install.bat`)
 
 ---
 
 ## Étape 1 — Migration CustomTkinter
 **Statut : À faire**
-**Version cible : 1.1.0**
+**Version cible : 0.1.0**
 
 Remplacer tkinter par CustomTkinter pour un rendu moderne.
 
@@ -42,7 +60,7 @@ Remplacer tkinter par CustomTkinter pour un rendu moderne.
 
 ## Étape 2 — Écran d'accueil avec choix fichier / dossier
 **Statut : À faire — dépend de l'Étape 1**
-**Version cible : 1.2.0**
+**Version cible : 0.2.0**
 
 Remplacer la boîte de dialogue automatique au lancement par un écran d'accueil
 intégré dans la fenêtre principale.
@@ -69,7 +87,7 @@ ne quitte plus).
 
 ## Étape 3 — Panneau liste des fichiers
 **Statut : À faire — dépend de l'Étape 2**
-**Version cible : 1.3.0**
+**Version cible : 0.3.0**
 
 Ajouter un panneau à droite de la prévisualisation listant tous les PDFs chargés.
 
@@ -98,7 +116,7 @@ Ajouter un panneau à droite de la prévisualisation listant tous les PDFs charg
 
 ## Étape 4 — Refonte du texte de l'en-tête
 **Statut : À faire — dépend de l'Étape 1**
-**Version cible : 1.4.0**
+**Version cible : 0.4.0**
 
 Corrections et améliorations de la section "Texte de l'en-tête" dans la sidebar.
 
@@ -124,7 +142,7 @@ Préfixe "CONFIDENTIEL –" + nom "rapport_2024" + suffixe "– V2" →
 
 ## Étape 5 — Options de sauvegarde
 **Statut : À faire — dépend de l'Étape 1**
-**Version cible : 1.5.0**
+**Version cible : 0.5.0**
 
 Remplacer le comportement fixe de sauvegarde par des options configurables.
 
@@ -150,7 +168,7 @@ Sauvegarde toujours dans `<dossier_source>_avec_entete/` au même niveau.
 
 ## Étape 6 — Appliquer à toute la liste
 **Statut : À faire — dépend de l'Étape 3**
-**Version cible : 1.6.0**
+**Version cible : 0.6.0**
 
 Ajouter un bouton pour appliquer les réglages actuels à tous les fichiers
 non traités de la liste en une seule action.
@@ -172,7 +190,7 @@ non traités de la liste en une seule action.
 
 ## Étape 7 — Rapport de session
 **Statut : À faire — dépend de l'Étape 3**
-**Version cible : 1.7.0**
+**Version cible : 0.7.0**
 
 Afficher un rapport à la fin d'une session et exporter un fichier CSV.
 
@@ -192,7 +210,7 @@ afficher une fenêtre modale récapitulative :
 
 ## Étape 8 — Améliorations UX
 **Statut : À faire — dépend des Étapes 1 à 3**
-**Version cible : 1.8.0**
+**Version cible : 0.8.0**
 
 - **Raccourcis clavier** :
   - `Entrée` → Appliquer
@@ -209,7 +227,7 @@ afficher une fenêtre modale récapitulative :
 
 ## Étape 9 — Glisser / déposer
 **Statut : À faire — dépend de l'Étape 2**
-**Version cible : 1.9.0**
+**Version cible : 0.9.0**
 
 - Ajouter `tkinterdnd2` aux dépendances dans `_bootstrap()`
 - Remplacer `ctk.CTk()` par `TkinterDnD.Tk()` avec thème CustomTkinter appliqué manuellement
@@ -221,7 +239,7 @@ afficher une fenêtre modale récapitulative :
 
 ## Étape 10 — Éléments multiples : architecture
 **Statut : À faire — dépend des Étapes 1, 2, 4**
-**Version cible : 2.0.0**
+**Version cible : 1.0.0**
 
 Refonte de l'architecture interne pour supporter plusieurs éléments
 (textes et images) positionnables indépendamment sur le PDF.
@@ -296,7 +314,7 @@ La section "Texte de l'en-tête" et "Style" sont remplacées par un
 
 ## Étape 11 — Éléments texte multiples
 **Statut : À faire — dépend de l'Étape 10**
-**Version cible : 2.1.0**
+**Version cible : 1.1.0**
 
 Implémenter complètement les éléments de type texte dans le nouveau modèle.
 
@@ -322,7 +340,7 @@ Implémenter complètement les éléments de type texte dans le nouveau modèle.
 
 ## Étape 12 — Éléments image
 **Statut : À faire — dépend de l'Étape 10**
-**Version cible : 2.2.0**
+**Version cible : 1.2.0**
 
 Implémenter les éléments de type image.
 
@@ -353,7 +371,7 @@ Implémenter les éléments de type image.
 
 ## Étape 13 — Préférences globales
 **Statut : À faire — dépend de l'Étape 1**
-**Version cible : 1.10.0**
+**Version cible : 1.3.0**
 
 Fenêtre de préférences séparée accessible via un bouton engrenage ⚙ dans la
 topbar. Les préférences définissent les valeurs par défaut appliquées à chaque
@@ -413,7 +431,7 @@ nouvel élément créé et à chaque nouvelle session.
 
 ## Étape 14 — Templates enrichis
 **Statut : À faire — dépend des Étapes 11, 12 et 13**
-**Version cible : 2.3.0**
+**Version cible : 1.4.0**
 
 Sauvegarder et réutiliser des ensembles d'éléments complets incluant les
 options de sauvegarde et l'option pages. Accessible depuis la sidebar ET
@@ -522,6 +540,7 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
    ```bash
    git add .
    git commit -m "feat: étape X — description"
-   git tag vX.Y.0
-   git push && git push origin vX.Y.0
+   git tag vX.Y.Z
+   git push && git push origin vX.Y.Z
    ```
+8. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.

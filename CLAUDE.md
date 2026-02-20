@@ -14,8 +14,8 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
 ├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : détection Python, téléchargement avec 3 méthodes, log, lance install.py
-├── version.txt       # Numéro de version (ex: 1.0.0) — lu par le système de MAJ
+├── install.bat       # Wrapper bat : vérifie Python, propose python.org/curl, log, lance install.py
+├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
 ├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md         # Ce fichier
 └── README.md         # Documentation utilisateur
@@ -82,21 +82,19 @@ Interface principale. Cycle de vie :
 
 ### Fonctionnement général
 1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
-2. Crée immédiatement un fichier log : `%TEMP%\pdf_header_install.log`
-3. Recherche Python dans l'ordre : commande `python`, commande `py`, chemins courants
-4. Vérifie la version minimale (3.8+)
-5. Si Python absent ou trop ancien : propose téléchargement auto ou python.org
-6. Téléchargement avec 3 méthodes en cascade (voir ci-dessous)
-7. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo)
-8. Lance `install.py` et log le code de retour
+2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
+3. Vérifie Python simplement avec `python --version`
+4. Si Python absent : propose ouverture de `python.org` ou téléchargement auto via `curl.exe`
+5. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo)
+6. Lance l'installateur Python (silencieux), puis `install.py`
+7. Log le code de retour de chaque étape critique
 
-### 3 méthodes de téléchargement Python (en cascade)
-1. `curl.exe` — natif Windows 11, `--retry 3`, timeout 30s, max 180s
-2. `PowerShell WebClient` — plus stable qu'Invoke-WebRequest
-3. `PowerShell Invoke-WebRequest` — dernier recours
+### Méthode de téléchargement Python
+1. `curl.exe` — méthode unique de téléchargement auto
+2. En cas d'échec/absence de curl : fallback vers `python.org/downloads`
 
 ### Fichier log
-- Chemin : `%TEMP%\pdf_header_install.log`
+- Chemin : `<dossier_install>\pdf_header_install.log`
 - Affiché à l'écran dès le début et à chaque erreur
 - Contient : horodatage, OS, utilisateur, répertoire, toutes les étapes, codes de retour
 
@@ -113,7 +111,7 @@ Interface principale. Cycle de vie :
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
 - `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
-- `install.bat` : téléchargement Python via `Invoke-WebRequest` instable → remplacé par cascade curl/WebClient/Invoke-WebRequest
+- `install.bat` : logique simplifiée (détection `python --version`, téléchargement auto via `curl` + fallback python.org)
 
 ---
 
@@ -160,9 +158,10 @@ Interface principale. Cycle de vie :
 
 - **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
 - **Mettre à jour `version.txt`** en même temps
-- Rappeler à l'utilisateur de créer le tag git :
+- **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
+- Rappeler à l'utilisateur de créer le tag git correspondant :
   ```bash
-  git tag v1.X.0 && git push origin v1.X.0
+  git tag vX.Y.Z && git push origin vX.Y.Z
   ```
 
 ### 6. Ce que Claude Code ne doit JAMAIS faire
@@ -301,4 +300,4 @@ sys.excepthook = _global_exception_handler
 - Langue de l'interface : français
 - Messages d'erreur : français, clairs, sans jargon technique
 - Incrémenter `VERSION` à chaque étape et créer le tag git correspondant
-
+- Pour le cycle en cours, respecter la progression `0.0.1` -> `1.0.0` définie dans `ROADMAP.md`
