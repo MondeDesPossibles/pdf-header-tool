@@ -708,6 +708,12 @@ class PDFHeaderApp:
         pix = page.get_pixmap(matrix=mat, alpha=False)
         self.page_w_px = pix.width
         self.page_h_px = pix.height
+        _debug_log(
+            f"RENDER canvas_wh=({cw},{ch}) scale={self.scale:.4f} "
+            f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
+            f"page_px=({pix.width}x{pix.height}) "
+            f"tk_scaling={self.canvas.tk.call('tk','scaling'):.3f}"
+        )
 
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         self.tk_img = ImageTk.PhotoImage(img)
@@ -781,11 +787,13 @@ class PDFHeaderApp:
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         self.pos_ratio_x = rx
         self.pos_ratio_y = ry
+        fname = self.pdf_files[self.idx].name if self.pdf_files else "?"
         _debug_log(
-            f"CLICK canvas=({event.x},{event.y}) "
+            f"CLICK [{fname}] canvas=({event.x},{event.y}) "
             f"offset=({self.img_offset_x},{self.img_offset_y}) "
             f"page_px=({self.page_w_px},{self.page_h_px}) "
-            f"ratio=({rx:.4f},{ry:.4f})"
+            f"ratio=({rx:.4f},{ry:.4f}) "
+            f"canvas_wh=({self.canvas.winfo_width()},{self.canvas.winfo_height()})"
         )
         self._update_pos_label()
         self._draw_overlay()
@@ -819,7 +827,7 @@ class PDFHeaderApp:
             doc_out = fitz.open(str(path))
             pages_to_process = range(len(doc_out)) if all_pages else [0]
             _debug_log(
-                f"APPLY ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"APPLY [{path.name}] ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
                 f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
                 f"x_pt={x_pt:.1f} y_pt={y_pt:.1f}"
             )
