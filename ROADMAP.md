@@ -5,9 +5,24 @@ Chaque étape doit être validée avant de passer à la suivante.
 
 ---
 
+## Correctifs appliqués (hors étapes)
+
+### install.bat — v1.0.0 (correctif)
+**Statut : Terminé ✓** — commit sur main, tag v1.0.0 mis à jour
+
+- Encodage console : ajout `chcp 65001`, suppression des caractères Unicode dans les `echo`
+- Téléchargement Python : remplacement de `Invoke-WebRequest` par une cascade de 3 méthodes
+  (`curl.exe` → `PowerShell WebClient` → `Invoke-WebRequest`)
+- Vérification version Python minimale (3.8+)
+- Détection Python dans les chemins courants si absent du PATH
+- Vérification intégrité du fichier téléchargé (taille > 1 Mo)
+- Log complet dans `%TEMP%\pdf_header_install.log` avec horodatage
+
+---
+
 ## Étape 1 — Migration CustomTkinter
-**Statut : Terminé ✓**
-**Version : 1.1.0**
+**Statut : À faire**
+**Version cible : 1.1.0**
 
 Remplacer tkinter par CustomTkinter pour un rendu moderne.
 

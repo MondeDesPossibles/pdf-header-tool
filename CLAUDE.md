@@ -14,7 +14,7 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
 ├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : vérifie Python, lance install.py
+├── install.bat       # Wrapper bat : détection Python, téléchargement avec 3 méthodes, log, lance install.py
 ├── version.txt       # Numéro de version (ex: 1.0.0) — lu par le système de MAJ
 ├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md         # Ce fichier
@@ -66,8 +66,8 @@ Interface principale. Cycle de vie :
 ## Dépendances
 - `pymupdf` (import `fitz`) — rendu PDF + écriture
 - `Pillow` (import `PIL`) — conversion pixmap → ImageTk
-- `customtkinter` — GUI moderne (depuis v1.1.0) ; thème : `dark` + `blue`
-- `tkinter` — conservé pour `tk.Canvas` (prévisualisation), `tk.StringVar/IntVar/BooleanVar`, `colorchooser`, `filedialog`, `messagebox`
+- `customtkinter` — GUI moderne (remplace tkinter à partir de v1.1.0)
+- `tkinter` — conservé pour `tk.Canvas` (CustomTkinter n'a pas de canvas natif)
 
 ---
 
@@ -78,10 +78,42 @@ Interface principale. Cycle de vie :
 
 ---
 
+## install.bat — Structure et comportement
+
+### Fonctionnement général
+1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
+2. Crée immédiatement un fichier log : `%TEMP%\pdf_header_install.log`
+3. Recherche Python dans l'ordre : commande `python`, commande `py`, chemins courants
+4. Vérifie la version minimale (3.8+)
+5. Si Python absent ou trop ancien : propose téléchargement auto ou python.org
+6. Téléchargement avec 3 méthodes en cascade (voir ci-dessous)
+7. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo)
+8. Lance `install.py` et log le code de retour
+
+### 3 méthodes de téléchargement Python (en cascade)
+1. `curl.exe` — natif Windows 11, `--retry 3`, timeout 30s, max 180s
+2. `PowerShell WebClient` — plus stable qu'Invoke-WebRequest
+3. `PowerShell Invoke-WebRequest` — dernier recours
+
+### Fichier log
+- Chemin : `%TEMP%\pdf_header_install.log`
+- Affiché à l'écran dès le début et à chaque erreur
+- Contient : horodatage, OS, utilisateur, répertoire, toutes les étapes, codes de retour
+
+### Points d'attention pour toute modification de install.bat
+- Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
+- Toujours logger avant ET après chaque opération critique
+- Tester sur une machine sans Python ET sur une machine avec Python ancien
+- La variable `PYTHON_CMD` doit être définie avant `:run_installer`
+
+---
+
 ## Problèmes connus et corrections déjà apportées
 - `_draw_overlay()` appelée avant que `self.canvas` existe → guard `if not hasattr(self, 'canvas'): return`
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
+- `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
+- `install.bat` : téléchargement Python via `Invoke-WebRequest` instable → remplacé par cascade curl/WebClient/Invoke-WebRequest
 
 ---
 
@@ -101,6 +133,7 @@ Interface principale. Cycle de vie :
 
 - Modifier `pdf_header.py` en priorité — c'est le fichier central
 - Ne modifier `install.py` ou `install.bat` que si la tâche le requiert explicitement
+- Pour `install.bat` : ne jamais utiliser de caractères Unicode dans les `echo`, toujours logger avant/après chaque étape critique
 - Toujours mettre à jour `CLAUDE.md` si l'architecture ou les méthodes changent
 - Toujours mettre à jour `ROADMAP.md` pour marquer l'étape comme terminée
 
