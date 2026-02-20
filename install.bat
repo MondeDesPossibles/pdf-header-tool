@@ -72,10 +72,10 @@ for %%P in (
     "C:\Python313\python.exe"
     "C:\Python312\python.exe"
 ) do (
-    if exist %%P (
-        for /f "tokens=*" %%v in ('%%P --version 2^>^&1') do set PY_VER=%%v
-        set PYTHON_CMD=%%P
-        call :log_ok "!PY_VER! detecte dans %%P"
+    if exist "%%~P" (
+        for /f "tokens=*" %%v in ('"%%~P" --version 2^>^&1') do set PY_VER=%%v
+        set PYTHON_CMD=%%~P
+        call :log_ok "!PY_VER! detecte dans %%~P"
         goto :check_version
     )
 )
@@ -160,11 +160,11 @@ if %errorlevel% == 0 (
     curl.exe -L --retry 3 --retry-delay 5 --connect-timeout 30 ^
         --max-time 180 --progress-bar ^
         -o "%PY_INSTALLER%" "%PY_URL%" >> "%LOG_FILE%" 2>&1
-    if %errorlevel% == 0 (
+    if !errorlevel! == 0 (
         call :log_ok "Telechargement reussi via curl.exe"
         goto :verify_download
     )
-    call :log "curl.exe a echoue (code %errorlevel%), tentative suivante..."
+    call :log "curl.exe a echoue (code !errorlevel!), tentative suivante..."
 )
 
 :: Essai 2 : PowerShell avec WebClient (plus stable que Invoke-WebRequest)
@@ -285,7 +285,7 @@ echo.
 
 set SCRIPT_DIR=%~dp0
 
-"!PYTHON_CMD!" "%SCRIPT_DIR%install.py" >> "%LOG_FILE%" 2>&1
+"!PYTHON_CMD!" "%SCRIPT_DIR%install.py"
 set INSTALL_PY_RESULT=%errorlevel%
 
 call :log "Code retour install.py : %INSTALL_PY_RESULT%"
@@ -297,14 +297,7 @@ if %INSTALL_PY_RESULT% neq 0 (
     exit /b 1
 )
 
-echo.
-echo ============================================================
-echo   Installation terminee avec succes !
-echo   Log : %LOG_FILE%
-echo ============================================================
-echo.
 call :log "Installation terminee avec succes"
-pause
 endlocal
 exit /b 0
 
