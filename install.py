@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool - install.py
 # Version : 0.0.1
-# Build   : build-2026.02.20.12
+# Build   : build-2026.02.20.13
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
@@ -20,8 +20,19 @@ if sys.version_info < (3, 8):
 # ---------------------------------------------------------------------------
 # Chemins
 # ---------------------------------------------------------------------------
+def _get_local_appdata_dir():
+    # LOCALAPPDATA peut etre virtualise avec Python Store.
+    # USERPROFILE\AppData\Local reste le chemin canonique attendu.
+    user_profile = Path(os.environ.get("USERPROFILE", ""))
+    if str(user_profile):
+        canonical = user_profile / "AppData" / "Local"
+        if canonical.exists():
+            return canonical
+    return Path(os.environ.get("LOCALAPPDATA", Path.home()))
+
+
 def _get_install_dir():
-    base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    base = _get_local_appdata_dir()
     return base / "PDFHeaderTool"
 
 
@@ -31,7 +42,7 @@ def _is_store_python():
 
 
 def _resolve_venv_python(install_dir):
-    base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    base = _get_local_appdata_dir()
     candidates = []
     packages = base / "Packages"
     requested = install_dir / ".venv" / "Scripts" / "python.exe"
@@ -58,7 +69,7 @@ VENV_PYTHON  = _resolve_venv_python(INSTALL_DIR)
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
-INSTALLER_VERSION = "build-2026.02.20.12"
+INSTALLER_VERSION = "build-2026.02.20.13"
 
 # ---------------------------------------------------------------------------
 # Utilitaires
