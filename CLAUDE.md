@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.0.1
-# Build   : 2026-02-20-r1
+# Build   : build-2026.02.20.04
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -167,8 +167,10 @@ Interface principale. Cycle de vie :
 
 - **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
 - **Mettre à jour `version.txt`** en même temps
-- **Pour chaque itération sur `install.bat` ou `install.py`**, incrémenter un identifiant de build visible dans les logs
-  (`Build install.bat: ...` et `install.py version: ...`) pour confirmer que la VM exécute bien les derniers fichiers
+- **Format obligatoire du build global** : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`)
+- **À chaque itération**, incrémenter ce build global sur **tous** les fichiers de référence :
+  `pdf_header.py`, `install.py`, `install.bat`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
+- Conserver ce build visible dans les logs runtime (`Build install.bat: ...`, `install.py version: ...`, `pdf_header.py build ...`)
 - **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
 - Rappeler à l'utilisateur de créer le tag git correspondant :
   ```bash

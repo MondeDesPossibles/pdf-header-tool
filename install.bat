@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - install.bat
 :: Version : 0.0.1
-:: Build   : 2026-02-20-r3
+:: Build   : build-2026.02.20.04
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,6 +13,7 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
+set "BUILD_ID=build-2026.02.20.04"
 set "PYTHON_CMD=python"
 set "PY_VERSION=3.13.1"
 set "PY_ARCH=amd64"
@@ -61,7 +62,7 @@ echo   Log : %LOG_FILE%
 echo ============================================================
 echo.
 call :log "Demarrage install.bat"
-call :log "Build install.bat: 2026-02-20-r3"
+call :log "Build install.bat: %BUILD_ID%"
 
 call :log "Etape: verification Python"
 call :resolve_python_cmd

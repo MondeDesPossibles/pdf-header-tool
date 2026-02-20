@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.0.1
-# Build   : 2026-02-20-r1
+# Build   : build-2026.02.20.04
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -552,5 +552,7 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
    git push && git push origin vX.Y.Z
    ```
 8. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
-9. À chaque itération touchant `install.bat` ou `install.py`, incrémenter la version de build affichée dans les logs
-   (`Build install.bat: ...` et `install.py version: ...`).
+9. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
+10. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `install.py`, `install.bat`,
+    `README.md`, `CLAUDE.md`, `ROADMAP.md`.
+11. Vérifier que ce build apparaît dans les logs runtime (`install.bat`, `install.py`, `pdf_header.py`).
