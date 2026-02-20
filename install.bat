@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - install.bat
 :: Version : 0.0.1
-:: Build   : build-2026.02.20.05
+:: Build   : build-2026.02.20.06
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,16 +13,8 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
-set "BUILD_ID=build-2026.02.20.05"
+set "BUILD_ID=build-2026.02.20.06"
 set "PYTHON_CMD=python"
-set "PY_VERSION=3.13.1"
-set "PY_ARCH=amd64"
-set "PY_INSTALLER="
-
-if /i "%PROCESSOR_ARCHITECTURE%"=="x86" if "%PROCESSOR_ARCHITEW6432%"=="" set "PY_ARCH=win32"
-for /f "tokens=1,2 delims=." %%a in ("%PY_VERSION%") do set "PY_FOLDER=Python%%a%%b"
-set "PY_URL=https://www.python.org/ftp/python/%PY_VERSION%/python-%PY_VERSION%-%PY_ARCH%.exe"
-set "PY_INSTALLER=%TEMP%\python_%PY_VERSION%_%PY_ARCH%.exe"
 
 echo [%date% %time%] Debut installation > "%LOG_FILE%"
 echo [%date% %time%] OS=%OS% >> "%LOG_FILE%"
@@ -64,215 +56,28 @@ echo.
 call :log "Demarrage install.bat"
 call :log "Build install.bat: %BUILD_ID%"
 
-call :log "Etape: verification Python"
-call :resolvepython
-if errorlevel 1 (
-    call :log "Python non detecte (aucun executable valide)"
-    goto :python_missing_menu
-)
+:checkpython
+call :log "Etape: verification Python via 'python --version'"
+python --version >nul 2>&1
+if errorlevel 1 goto :nopython
 
-for /f "tokens=*" %%v in ('"%PYTHON_CMD%" --version 2^>^&1') do set "PY_VER=%%v"
-call :log_ok "Python detecte: !PY_VER! via %PYTHON_CMD%"
-goto :python_present
+for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
+call :log_ok "Python detecte: !PY_VER!"
+goto :runinstaller
 
-:python_missing_menu
+:nopython
+call :log "Python non detecte, ouverture Microsoft Store via commande python"
 echo.
 echo   Python n'est pas detecte.
-echo.
-echo   1. Ouvrir python.org (manuel)
-echo   2. Installation auto (winget puis curl)
-echo   3. Annuler
-echo.
-set "CHOICE="
-set /p CHOICE="   Votre choix (1, 2 ou 3): "
-set "CHOICE=%CHOICE: =%"
-set "CHOICE=%CHOICE:~0,1%"
-call :log "Choix utilisateur normalise: %CHOICE%"
-
-if "%CHOICE%"=="1" (
-    call :log "Branche choisie: ouverture python.org"
-    goto :open_python_org
-)
-if "%CHOICE%"=="2" (
-    call :log "Branche choisie: installation auto"
-    goto :install_auto
-)
-if "%CHOICE%"=="3" (
-    call :log "Branche choisie: annulation"
-    goto :cancelled
-)
-echo   Choix invalide.
-goto :python_missing_menu
-
-:python_present
-call :log "Etape: tentative winget upgrade Python.Python.3"
-call :checkwinget
-if errorlevel 1 (
-    call :log "winget introuvable, upgrade ignore"
-    goto :post_python_install
-)
-
-echo   Mise a jour Python via winget en cours...
-winget upgrade --id Python.Python.3 -e --accept-package-agreements --accept-source-agreements --disable-interactivity >> "%LOG_FILE%" 2>&1
-set "WINGET_UPGRADE_EXIT=%errorlevel%"
-call :log "Code retour winget upgrade: %WINGET_UPGRADE_EXIT%"
-if not "%WINGET_UPGRADE_EXIT%"=="0" (
-    call :log "winget upgrade non applique (non bloquant)"
-) else (
-    call :log_ok "winget upgrade Python applique"
-)
-goto :post_python_install
-
-:open_python_org
-call :log "Ouverture python.org/downloads"
-start "" "https://www.python.org/downloads/"
-echo.
-echo   Installez Python puis relancez install.bat.
-echo   Log: %LOG_FILE%
-pause
-endlocal
-exit /b 0
-
-:install_auto
-call :log "Etape: entree branche installation auto"
-call :log "Etape: tentative winget install Python.Python.3.13"
-call :checkwinget
-if errorlevel 1 (
-    call :log "winget introuvable, fallback curl"
-    goto :download_python_curl
-)
-
-echo   Installation Python via winget en cours...
-winget install --id Python.Python.3.13 -e --accept-package-agreements --accept-source-agreements --disable-interactivity >> "%LOG_FILE%" 2>&1
-set "WINGET_INSTALL_EXIT=%errorlevel%"
-call :log "Code retour winget install: %WINGET_INSTALL_EXIT%"
-if "%WINGET_INSTALL_EXIT%"=="0" (
-    call :log_ok "winget install Python reussi"
-    goto :post_python_install
-)
-
-call :log "winget install a echoue, fallback curl"
-goto :download_python_curl
-
-:download_python_curl
-call :log "Etape: verification curl.exe"
-curl.exe --version >nul 2>&1
-if errorlevel 1 (
-    call :log "curl.exe introuvable, fallback python.org"
-    goto :open_python_org
-)
-
-call :log "Etape: telechargement Python via curl"
-call :log "URL: %PY_URL%"
-call :log "Destination: %PY_INSTALLER%"
-echo.
-echo   Telechargement de Python %PY_VERSION% (%PY_ARCH%)...
+echo   Installation via Microsoft Store en cours...
+echo   Installez Python puis revenez sur cette fenetre.
 echo.
 
-call :log "Trace: lancement commande curl"
-curl.exe -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "%PY_INSTALLER%" "%PY_URL%" >> "%LOG_FILE%" 2>&1
-set "CURL_EXIT=%errorlevel%"
-call :log "Code retour curl: %CURL_EXIT%"
-if not "%CURL_EXIT%"=="0" (
-    call :log "Echec telechargement curl, fallback python.org"
-    goto :open_python_org
-)
+python >> "%LOG_FILE%" 2>&1
+timeout /t 60 >nul
+goto :checkpython
 
-if not exist "%PY_INSTALLER%" (
-    call :fail "Fichier telecharge introuvable"
-)
-
-for %%F in ("%PY_INSTALLER%") do set "FILE_SIZE=%%~zF"
-call :log "Taille fichier telecharge: %FILE_SIZE% octets"
-if %FILE_SIZE% LSS 1048576 (
-    del "%PY_INSTALLER%" >nul 2>&1
-    call :fail "Fichier telecharge invalide (trop petit)"
-)
-call :log_ok "Telechargement Python valide"
-goto :run_python_installer
-
-:run_python_installer
-call :log "Etape: lancement installateur Python"
-echo.
-echo   Installation de Python en cours...
-echo.
-
-"%PY_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_launcher=1 >> "%LOG_FILE%" 2>&1
-set "PY_INSTALL_EXIT=%errorlevel%"
-call :log "Code retour installateur Python: %PY_INSTALL_EXIT%"
-if not "%PY_INSTALL_EXIT%"=="0" (
-    call :fail "Installateur Python en erreur"
-)
-
-del "%PY_INSTALLER%" >nul 2>&1
-call :log "Installateur temporaire supprime"
-
-:post_python_install
-call :log "Etape: rafraichissement PATH session"
-set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Programs\Python\Python313\Scripts"
-set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts"
-set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts"
-
-call :resolvepython
-if errorlevel 1 (
-    call :fail "Python installe mais non detecte. Relancez le script."
-)
-
-call :log "Etape: nouvelle verification Python"
-"%PYTHON_CMD%" --version >nul 2>&1
-if errorlevel 1 (
-    call :fail "Python installe mais non detecte. Relancez le script."
-)
-
-for /f "tokens=*" %%v in ('"%PYTHON_CMD%" --version 2^>^&1') do set "PY_VER=%%v"
-call :log_ok "Python pret: !PY_VER!"
-goto :run_installer
-
-:checkwinget
-winget --version >nul 2>&1
-if errorlevel 1 exit /b 1
-exit /b 0
-
-:resolvepython
-set "PYTHON_CMD="
-
-if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
-    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
-    goto :resolve_done
-)
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-    goto :resolve_done
-)
-if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
-    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-    goto :resolve_done
-)
-
-if not defined PYTHON_CMD (
-    py --version >nul 2>&1
-    if not errorlevel 1 (
-        set "PYTHON_CMD=py"
-        goto :resolve_done
-    )
-)
-
-if not defined PYTHON_CMD (
-    python --version >nul 2>&1
-    if not errorlevel 1 (
-        set "PYTHON_CMD=python"
-        goto :resolve_done
-    )
-)
-
-:resolve_done
-if defined PYTHON_CMD (
-    call :log "Commande Python resolue: %PYTHON_CMD%"
-    exit /b 0
-)
-exit /b 1
-
-:run_installer
+:runinstaller
 if not exist "%SCRIPT_DIR%install.py" (
     call :fail "install.py introuvable"
 )
@@ -282,7 +87,6 @@ echo.
 echo   Installation de PDF Header Tool en cours...
 echo.
 
-call :log "Commande Python utilisee: %PYTHON_CMD%"
 "%PYTHON_CMD%" "%SCRIPT_DIR%install.py" >> "%LOG_FILE%" 2>&1
 set "INSTALL_PY_RESULT=%errorlevel%"
 call :log "Code retour install.py: %INSTALL_PY_RESULT%"
@@ -293,15 +97,6 @@ if not "%INSTALL_PY_RESULT%"=="0" (
 call :log_ok "Installation terminee avec succes"
 echo.
 echo   Installation terminee avec succes.
-echo   Log: %LOG_FILE%
-pause
-endlocal
-exit /b 0
-
-:cancelled
-call :log "Installation annulee par utilisateur"
-echo.
-echo   Installation annulee.
 echo   Log: %LOG_FILE%
 pause
 endlocal

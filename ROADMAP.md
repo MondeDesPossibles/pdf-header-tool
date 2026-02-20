@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.0.1
-# Build   : build-2026.02.20.05
+# Build   : build-2026.02.20.06
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -38,10 +38,9 @@ Chaque étape doit être validée avant de passer à la suivante.
 **Statut : Terminé ✓** — point de départ avant reprise des étapes roadmap
 
 - Encodage console : ajout `chcp 65001`, suppression des caractères Unicode dans les `echo`
-- Vérification Python simplifiée via `python --version`
-- Si Python présent et `winget` disponible : tentative `winget upgrade --id Python.Python.3`
-- Si Python absent : menu (ouvrir python.org ou installation auto `winget`, puis fallback `curl.exe`)
-- Téléchargement fallback via `curl.exe` avec retries et vérification d'intégrité (taille > 1 Mo)
+- Vérification Python via `python --version`
+- Si Python absent : exécute `python` pour déclencher Microsoft Store, puis recheck en boucle (timeout 60s)
+- Si Python détecté : lance `install.py`
 - Log complet dans `pdf_header_install.log` (dossier de `install.bat`)
 
 ---
