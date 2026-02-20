@@ -1,10 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
-# Version : 1.0.0
+# Version : 0.0.1
+# Build   : 2026-02-20-r1
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "1.1.0"
+VERSION     = "0.0.1"
+BUILD_ID    = "2026-02-20-r1"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -640,6 +642,7 @@ class PDFHeaderApp:
 # Point d'entrée
 # ---------------------------------------------------------------------------
 def main():
+    print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
     check_update()
 
     # Collecte des PDFs

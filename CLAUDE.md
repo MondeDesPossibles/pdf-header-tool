@@ -1,3 +1,10 @@
+# ==============================================================================
+# PDF Header Tool — CLAUDE.md
+# Version : 0.0.1
+# Build   : 2026-02-20-r1
+# Repo    : MondeDesPossibles/pdf-header-tool
+# ==============================================================================
+
 # CLAUDE.md — Contexte du projet PDF Header Tool
 
 ## Ce que fait ce projet
@@ -160,6 +167,8 @@ Interface principale. Cycle de vie :
 
 - **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
 - **Mettre à jour `version.txt`** en même temps
+- **Pour chaque itération sur `install.bat` ou `install.py`**, incrémenter un identifiant de build visible dans les logs
+  (`Build install.bat: ...` et `install.py version: ...`) pour confirmer que la VM exécute bien les derniers fichiers
 - **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
 - Rappeler à l'utilisateur de créer le tag git correspondant :
   ```bash

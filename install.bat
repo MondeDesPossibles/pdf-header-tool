@@ -1,4 +1,10 @@
 @echo off
+:: ==============================================================================
+:: PDF Header Tool - install.bat
+:: Version : 0.0.1
+:: Build   : 2026-02-20-r3
+:: Repo    : MondeDesPossibles/pdf-header-tool
+:: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul 2>&1
 title PDF Header Tool - Installation
@@ -55,16 +61,17 @@ echo   Log : %LOG_FILE%
 echo ============================================================
 echo.
 call :log "Demarrage install.bat"
+call :log "Build install.bat: 2026-02-20-r3"
 
-call :log "Etape: verification Python via 'python --version'"
-python --version >nul 2>&1
+call :log "Etape: verification Python"
+call :resolve_python_cmd
 if errorlevel 1 (
-    call :log "Python non detecte dans PATH"
+    call :log "Python non detecte (aucun executable valide)"
     goto :python_missing_menu
 )
 
-for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
-call :log_ok "Python detecte: !PY_VER!"
+for /f "tokens=*" %%v in ('"%PYTHON_CMD%" --version 2^>^&1') do set "PY_VER=%%v"
+call :log_ok "Python detecte: !PY_VER! via %PYTHON_CMD%"
 goto :python_present
 
 :python_missing_menu
@@ -75,12 +82,24 @@ echo   1. Ouvrir python.org (manuel)
 echo   2. Installation auto (winget puis curl)
 echo   3. Annuler
 echo.
+set "CHOICE="
 set /p CHOICE="   Votre choix (1, 2 ou 3): "
-call :log "Choix utilisateur saisi"
+set "CHOICE=%CHOICE: =%"
+set "CHOICE=%CHOICE:~0,1%"
+call :log "Choix utilisateur normalise: %CHOICE%"
 
-if "%CHOICE%"=="1" goto :open_python_org
-if "%CHOICE%"=="2" goto :download_python
-if "%CHOICE%"=="3" goto :cancelled
+if "%CHOICE%"=="1" (
+    call :log "Branche choisie: ouverture python.org"
+    goto :open_python_org
+)
+if "%CHOICE%"=="2" (
+    call :log "Branche choisie: installation auto"
+    goto :install_auto
+)
+if "%CHOICE%"=="3" (
+    call :log "Branche choisie: annulation"
+    goto :cancelled
+)
 echo   Choix invalide.
 goto :python_missing_menu
 
@@ -113,7 +132,8 @@ pause
 endlocal
 exit /b 0
 
-:download_python
+:install_auto
+call :log "Etape: entree branche installation auto"
 call :log "Etape: tentative winget install Python.Python.3.13"
 call :check_winget
 if errorlevel 1 (
@@ -215,20 +235,36 @@ exit /b 0
 :resolve_python_cmd
 set "PYTHON_CMD="
 
-if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
-if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-
-if not defined PYTHON_CMD (
-    python --version >nul 2>&1
-    if not errorlevel 1 set "PYTHON_CMD=python"
+if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
+    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+    goto :resolve_done
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+    goto :resolve_done
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+    set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    goto :resolve_done
 )
 
 if not defined PYTHON_CMD (
     py --version >nul 2>&1
-    if not errorlevel 1 set "PYTHON_CMD=py"
+    if not errorlevel 1 (
+        set "PYTHON_CMD=py"
+        goto :resolve_done
+    )
 )
 
+if not defined PYTHON_CMD (
+    python --version >nul 2>&1
+    if not errorlevel 1 (
+        set "PYTHON_CMD=python"
+        goto :resolve_done
+    )
+)
+
+:resolve_done
 if defined PYTHON_CMD (
     call :log "Commande Python resolue: %PYTHON_CMD%"
     exit /b 0

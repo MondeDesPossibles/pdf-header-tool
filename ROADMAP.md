@@ -1,3 +1,10 @@
+# ==============================================================================
+# PDF Header Tool — ROADMAP.md
+# Version : 0.0.1
+# Build   : 2026-02-20-r1
+# Repo    : MondeDesPossibles/pdf-header-tool
+# ==============================================================================
+
 # ROADMAP — PDF Header Tool
 
 Ce fichier liste les évolutions prévues dans l'ordre d'implémentation.
@@ -545,3 +552,5 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
    git push && git push origin vX.Y.Z
    ```
 8. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
+9. À chaque itération touchant `install.bat` ou `install.py`, incrémenter la version de build affichée dans les logs
+   (`Build install.bat: ...` et `install.py version: ...`).
