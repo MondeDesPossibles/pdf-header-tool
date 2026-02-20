@@ -126,25 +126,54 @@ Ajouter un panneau à droite de la prévisualisation listant tous les PDFs charg
 **Statut : À faire — dépend de l'Étape 1**
 **Version cible : 0.4.0**
 
-Corrections et améliorations de la section "Texte de l'en-tête" dans la sidebar.
+Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 
-### Changements
+### Composition du texte
 - **Supprimer l'extension `.pdf`** du texte injecté par défaut
   (ex : `rapport_2024` au lieu de `rapport_2024.pdf`)
-- **Remplacer les 4 radio boutons** par :
-  - Case à cocher **Préfixe** (activable indépendamment)
-  - Champ de saisie préfixe — placé **en dessous** du label "Préfixe"
-  - Nom du fichier (toujours présent, non modifiable, affiché en lecture seule)
-  - Case à cocher **Suffixe** (activable indépendamment)
-  - Champ de saisie suffixe — placé **en dessous** du label "Suffixe"
-  - Case à cocher **Texte personnalisé** — remplace le nom du fichier si coché
-  - Champ de saisie texte custom — placé **en dessous** du label "Texte custom"
-- Préfixe et suffixe peuvent être actifs simultanément
-- L'aperçu temps réel reste en bas de la section
+- **Préfixe**, **nom de fichier** (lecture seule), **suffixe**, **texte personnalisé**
+  avec activation indépendante
+- Préfixe et suffixe activables simultanément
+- Insertion de **date** via date picker
+- Option date du jour par défaut
+- Date utilisable en préfixe ou suffixe
+- Personnalisation du format de date
+- Source de date configurable (date du jour ou métadonnée fichier)
+- Aperçu temps réel conservé
 
-### Exemple de résultat
-Préfixe "CONFIDENTIEL –" + nom "rapport_2024" + suffixe "– V2" →
-`CONFIDENTIEL – rapport_2024 – V2`
+### Typographie
+- Sélecteur de police basé sur les polices disponibles sur le système utilisateur
+- Priorité d'affichage: polices Microsoft par défaut, Linux par défaut, Apple par défaut
+- Ajouter les polices Google présentes sur le système (ex: Roboto, Lato)
+- Style **gras**
+- Style *italique*
+- Style souligné
+- Réglage de l'espacement des lettres
+- Réglage de l'espacement des lignes
+
+### Position et orientation
+- Liste de positions prédéfinies:
+  - haut-gauche, haut-centre, haut-droite
+  - milieu-gauche, milieu-centre, milieu-droite
+  - bas-gauche, bas-centre, bas-droite
+- Ajustement fin via marges et offsets X/Y
+- Orientation horizontale ou verticale
+- Rotation par angle prédéfini (0, 90, 180, 270)
+- Direction du texte en mode vertical configurable
+
+### Cadre et fond
+- Option cadre activable
+- Choix de la couleur du cadre
+- Épaisseur du trait configurable
+- Style de bord configurable
+- Padding interne autour du texte
+- Option fond activable (plein ou non)
+- Choix de la couleur du fond
+- Opacité du fond configurable
+- Opacité du contour configurable
+
+### Gestion des limites
+- Retour automatique à la ligne en respectant les mots (pas de coupure au milieu d'un mot)
 
 ---
 
