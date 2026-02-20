@@ -133,12 +133,12 @@ Corrections et améliorations de la section "Texte de l'en-tête" dans la sideba
   (ex : `rapport_2024` au lieu de `rapport_2024.pdf`)
 - **Remplacer les 4 radio boutons** par :
   - Case à cocher **Préfixe** (activable indépendamment)
-  - Champ de saisie préfixe — placé **au-dessus** du label "Préfixe"
+  - Champ de saisie préfixe — placé **en dessous** du label "Préfixe"
   - Nom du fichier (toujours présent, non modifiable, affiché en lecture seule)
   - Case à cocher **Suffixe** (activable indépendamment)
-  - Champ de saisie suffixe — placé **au-dessus** du label "Suffixe"
+  - Champ de saisie suffixe — placé **en dessous** du label "Suffixe"
   - Case à cocher **Texte personnalisé** — remplace le nom du fichier si coché
-  - Champ de saisie texte custom — placé **au-dessus** du label "Texte custom"
+  - Champ de saisie texte custom — placé **en dessous** du label "Texte custom"
 - Préfixe et suffixe peuvent être actifs simultanément
 - L'aperçu temps réel reste en bas de la section
 

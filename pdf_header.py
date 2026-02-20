@@ -162,6 +162,20 @@ def hex_to_rgb_float(hex_color):
     return r / 255, g / 255, b / 255
 
 # ---------------------------------------------------------------------------
+# Debug log (temporaire — retirer après diagnostic)
+# ---------------------------------------------------------------------------
+_DEBUG_LOG = INSTALL_DIR / "pdf_header_debug.log"
+
+def _debug_log(msg: str):
+    import datetime
+    line = f"[{datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n"
+    try:
+        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
+
+# ---------------------------------------------------------------------------
 # Thème CustomTkinter
 # ---------------------------------------------------------------------------
 ctk.set_appearance_mode("dark")
@@ -767,6 +781,12 @@ class PDFHeaderApp:
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         self.pos_ratio_x = rx
         self.pos_ratio_y = ry
+        _debug_log(
+            f"CLICK canvas=({event.x},{event.y}) "
+            f"offset=({self.img_offset_x},{self.img_offset_y}) "
+            f"page_px=({self.page_w_px},{self.page_h_px}) "
+            f"ratio=({rx:.4f},{ry:.4f})"
+        )
         self._update_pos_label()
         self._draw_overlay()
 
@@ -798,10 +818,20 @@ class PDFHeaderApp:
         try:
             doc_out = fitz.open(str(path))
             pages_to_process = range(len(doc_out)) if all_pages else [0]
+            _debug_log(
+                f"APPLY ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
+                f"x_pt={x_pt:.1f} y_pt={y_pt:.1f}"
+            )
             for i in pages_to_process:
                 pg = doc_out[i]
+                fitz_pt = fitz.Point(x_pt, pg.rect.height - y_pt)
+                _debug_log(
+                    f"  page[{i}] rect=({pg.rect.width:.1f}x{pg.rect.height:.1f}) "
+                    f"fitz.Point=({fitz_pt.x:.1f},{fitz_pt.y:.1f})"
+                )
                 pg.insert_text(
-                    fitz.Point(x_pt, pg.rect.height - y_pt),
+                    fitz_pt,
                     header_text,
                     fontname="cour",
                     fontsize=font_size,
