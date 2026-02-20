@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - install.bat
 :: Version : 0.0.1
-:: Build   : build-2026.02.20.04
+:: Build   : build-2026.02.20.05
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,7 +13,7 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
-set "BUILD_ID=build-2026.02.20.04"
+set "BUILD_ID=build-2026.02.20.05"
 set "PYTHON_CMD=python"
 set "PY_VERSION=3.13.1"
 set "PY_ARCH=amd64"
@@ -65,7 +65,7 @@ call :log "Demarrage install.bat"
 call :log "Build install.bat: %BUILD_ID%"
 
 call :log "Etape: verification Python"
-call :resolve_python_cmd
+call :resolvepython
 if errorlevel 1 (
     call :log "Python non detecte (aucun executable valide)"
     goto :python_missing_menu
@@ -106,7 +106,7 @@ goto :python_missing_menu
 
 :python_present
 call :log "Etape: tentative winget upgrade Python.Python.3"
-call :check_winget
+call :checkwinget
 if errorlevel 1 (
     call :log "winget introuvable, upgrade ignore"
     goto :post_python_install
@@ -136,7 +136,7 @@ exit /b 0
 :install_auto
 call :log "Etape: entree branche installation auto"
 call :log "Etape: tentative winget install Python.Python.3.13"
-call :check_winget
+call :checkwinget
 if errorlevel 1 (
     call :log "winget introuvable, fallback curl"
     goto :download_python_curl
@@ -213,7 +213,7 @@ set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Program
 set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts"
 set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts"
 
-call :resolve_python_cmd
+call :resolvepython
 if errorlevel 1 (
     call :fail "Python installe mais non detecte. Relancez le script."
 )
@@ -228,12 +228,12 @@ for /f "tokens=*" %%v in ('"%PYTHON_CMD%" --version 2^>^&1') do set "PY_VER=%%v"
 call :log_ok "Python pret: !PY_VER!"
 goto :run_installer
 
-:check_winget
+:checkwinget
 winget --version >nul 2>&1
 if errorlevel 1 exit /b 1
 exit /b 0
 
-:resolve_python_cmd
+:resolvepython
 set "PYTHON_CMD="
 
 if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" (
