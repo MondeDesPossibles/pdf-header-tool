@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.0.1
-# Build   : build-2026.02.20.14
+# Build   : build-2026.02.20.15
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -43,6 +43,7 @@ Chaque étape doit être validée avant de passer à la suivante.
 - Si Python Microsoft Store détecté : refuser ce runtime et rediriger vers `python.org`
 - Si Python standard détecté : lancer `install.py`
 - Cible d'installation : `%LOCALAPPDATA%\\PDFHeaderTool`
+- Fermeture automatique de `install.bat` en cas de succès (pause uniquement en erreur)
 - Log complet dans `pdf_header_install.log` (dossier de `install.bat`)
 
 ---

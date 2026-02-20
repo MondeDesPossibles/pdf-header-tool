@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool - install.py
 # Version : 0.0.1
-# Build   : build-2026.02.20.14
+# Build   : build-2026.02.20.15
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
@@ -50,7 +50,7 @@ VENV_PYTHON  = _resolve_venv_python(INSTALL_DIR)
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
-INSTALLER_VERSION = "build-2026.02.20.14"
+INSTALLER_VERSION = "build-2026.02.20.15"
 
 # ---------------------------------------------------------------------------
 # Utilitaires
@@ -63,7 +63,6 @@ def ok(msg=""):
 
 def fail(msg):
     print(f"      [ERROR] {msg}")
-    input("\nAppuyez sur Entree pour quitter...")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -247,7 +246,6 @@ def main():
     print(f"     Dossier : {INSTALL_DIR}")
     print(f"     Lancez l'application depuis le raccourci sur le bureau")
     print("=" * 60)
-    input("\nAppuyez sur Entree pour fermer...")
 
 if __name__ == "__main__":
     main()

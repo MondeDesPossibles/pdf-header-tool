@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - install.bat
 :: Version : 0.0.1
-:: Build   : build-2026.02.20.14
+:: Build   : build-2026.02.20.15
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,7 +13,7 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
-set "BUILD_ID=build-2026.02.20.14"
+set "BUILD_ID=build-2026.02.20.15"
 set "PYTHON_CMD=python"
 set "PY_EXE="
 
@@ -110,10 +110,14 @@ if not "%INSTALL_PY_RESULT%"=="0" (
     call :fail "install.py a retourne une erreur"
 )
 
+findstr /C:"[OK] Installation terminee !" "%LOG_FILE%" >nul
+if errorlevel 1 (
+    call :fail "Installation incomplete: ligne de succes non trouvee dans le log"
+)
+
 call :log_ok "Installation terminee avec succes"
 echo.
 echo   Installation terminee avec succes.
 echo   Log: %LOG_FILE%
-pause
 endlocal
 exit /b 0

@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.0.1
-# Build   : build-2026.02.20.14
+# Build   : build-2026.02.20.15
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -94,7 +94,8 @@ Interface principale. Cycle de vie :
 4. Si Python absent : ouvre `https://www.python.org/downloads/` et demande une installation manuelle
 5. Si Python Microsoft Store détecté : stoppe l'installation et redirige aussi vers `python.org`
 6. Lance `install.py` une fois un Python standard détecté
-7. Log le code de retour de chaque étape critique
+7. Vérifie la ligne de succès dans le log (`[OK] Installation terminee !`)
+8. Ferme automatiquement en cas de succès (pause uniquement en cas d'erreur)
 
 ### Méthode de téléchargement Python
 1. Vérification unique via `python --version`
