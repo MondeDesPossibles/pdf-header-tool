@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.0.1
-# Build   : build-2026.02.20.07
+# Build   : build-2026.02.20.12
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -111,6 +111,8 @@ Interface principale. Cycle de vie :
 - Toujours logger avant ET après chaque opération critique
 - Tester sur une machine sans Python ET sur une machine avec Python ancien
 - La variable `PYTHON_CMD` doit être définie avant `:run_installer`
+- Cible d'installation: `%LOCALAPPDATA%\\PDFHeaderTool`
+- Avec Python Microsoft Store, le venv peut etre redirige; garder une detection tolerante du chemin `python.exe` du venv
 
 ---
 
