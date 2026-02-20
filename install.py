@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — install.py
 # Version : 0.0.1
-# Build   : build-2026.02.20.06
+# Build   : build-2026.02.20.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu démarrer
 # ==============================================================================
@@ -26,7 +26,7 @@ VENV_PYTHON  = VENV_DIR / "Scripts" / "python.exe"
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
-INSTALLER_VERSION = "build-2026.02.20.06"
+INSTALLER_VERSION = "build-2026.02.20.07"
 
 # ---------------------------------------------------------------------------
 # Utilitaires
@@ -78,20 +78,33 @@ def setup_venv():
     else:
         ok("Venv déjà existant, réutilisation")
 
-    step("Installation des dépendances (pymupdf, Pillow)")
-    pkgs = ["pymupdf", "Pillow"]
+    step("Installation des dependances (pymupdf, Pillow, customtkinter)")
+    # Mettre pip a jour augmente fortement la fiabilite sur VM fraiches.
+    try:
+        subprocess.check_call(
+            [str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip", "--disable-pip-version-check"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError:
+        pass
+
+    pkgs = ["pymupdf", "Pillow", "customtkinter"]
     for pkg in pkgs:
         print(f"      -> {pkg}...", end="", flush=True)
-        try:
-            subprocess.check_call(
-                [str(VENV_PYTHON), "-m", "pip", "install", pkg, "--quiet",
-                 "--disable-pip-version-check"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+        cmd = [
+            str(VENV_PYTHON), "-m", "pip", "install", pkg,
+            "--disable-pip-version-check", "--prefer-binary"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
             print(" [OK]")
-        except subprocess.CalledProcessError:
+        else:
             print(f"\n      [ERROR] Impossible d'installer {pkg}")
-            fail(f"Vérifiez votre connexion Internet et relancez install.bat")
+            if result.stderr:
+                print("      pip stderr:")
+                for line in result.stderr.strip().splitlines()[-8:]:
+                    print(f"        {line}")
+            fail("Verifiez la connexion Internet et relancez install.bat")
 
 # ---------------------------------------------------------------------------
 # 3. Créer le lancer.bat dans le dossier d'installation
