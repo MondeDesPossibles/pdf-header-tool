@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.0.1
-# Build   : build-2026.02.20.13
+# Build   : build-2026.02.20.14
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -21,7 +21,7 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
 ├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : vérifie Python, déclenche Microsoft Store via `python`, recheck, lance install.py
+├── install.bat       # Wrapper bat : vérifie Python, ouvre python.org si absent/Store, lance install.py
 ├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
 ├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md         # Ce fichier
@@ -91,15 +91,15 @@ Interface principale. Cycle de vie :
 1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
 2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
 3. Vérifie Python simplement avec `python --version`
-4. Si Python absent : exécute `python` pour déclencher Microsoft Store
-5. Attend 60 secondes, puis revérifie `python --version` (boucle jusqu'à détection)
-6. Lance `install.py` une fois Python détecté
+4. Si Python absent : ouvre `https://www.python.org/downloads/` et demande une installation manuelle
+5. Si Python Microsoft Store détecté : stoppe l'installation et redirige aussi vers `python.org`
+6. Lance `install.py` une fois un Python standard détecté
 7. Log le code de retour de chaque étape critique
 
 ### Méthode de téléchargement Python
 1. Vérification unique via `python --version`
-2. Si absent : déclenchement Microsoft Store via commande `python`
-3. Boucle de recheck après attente (`timeout 60s`)
+2. Installation manuelle Python via `https://www.python.org/downloads/`
+3. Python Microsoft Store non supporté pour l'installation de l'outil
 
 ### Fichier log
 - Chemin : `<dossier_install>\pdf_header_install.log`
@@ -112,7 +112,7 @@ Interface principale. Cycle de vie :
 - Tester sur une machine sans Python ET sur une machine avec Python ancien
 - La variable `PYTHON_CMD` doit être définie avant `:run_installer`
 - Cible d'installation: `%LOCALAPPDATA%\\PDFHeaderTool`
-- Avec Python Microsoft Store, le venv peut etre redirige; garder une detection tolerante du chemin `python.exe` du venv
+- Python Microsoft Store est explicitement refusé par `install.bat` pour éviter la virtualisation des chemins
 
 ---
 
@@ -121,7 +121,7 @@ Interface principale. Cycle de vie :
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
 - `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
-- `install.bat` : logique simplifiée (détection `python --version`, fallback Microsoft Store via `python`, recheck en boucle)
+- `install.bat` : logique simplifiée (détection `python --version`, redirection vers python.org si Python absent ou Store)
 
 ---
 

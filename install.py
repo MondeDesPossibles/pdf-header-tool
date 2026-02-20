@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool - install.py
 # Version : 0.0.1
-# Build   : build-2026.02.20.13
+# Build   : build-2026.02.20.14
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
@@ -36,30 +36,11 @@ def _get_install_dir():
     return base / "PDFHeaderTool"
 
 
-def _is_store_python():
-    exe = str(Path(sys.executable).resolve())
-    return "PythonSoftwareFoundation.Python." in exe or "WindowsApps" in exe
-
-
 def _resolve_venv_python(install_dir):
-    base = _get_local_appdata_dir()
-    candidates = []
-    packages = base / "Packages"
     requested = install_dir / ".venv" / "Scripts" / "python.exe"
-
-    if _is_store_python():
-        for pkg in sorted(packages.glob("PythonSoftwareFoundation.Python.*"), reverse=True):
-            candidates.append(pkg / "LocalCache" / "Local" / "PDFHeaderTool" / ".venv" / "Scripts" / "python.exe")
-        candidates.append(requested)
-    else:
-        candidates.append(requested)
-        for pkg in sorted(packages.glob("PythonSoftwareFoundation.Python.*"), reverse=True):
-            candidates.append(pkg / "LocalCache" / "Local" / "PDFHeaderTool" / ".venv" / "Scripts" / "python.exe")
-
-    for path in candidates:
-        cfg = path.parent.parent / "pyvenv.cfg"
-        if path.exists() and cfg.exists():
-            return path
+    cfg = requested.parent.parent / "pyvenv.cfg"
+    if requested.exists() and cfg.exists():
+        return requested
     return requested
 
 
@@ -69,7 +50,7 @@ VENV_PYTHON  = _resolve_venv_python(INSTALL_DIR)
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
-INSTALLER_VERSION = "build-2026.02.20.13"
+INSTALLER_VERSION = "build-2026.02.20.14"
 
 # ---------------------------------------------------------------------------
 # Utilitaires

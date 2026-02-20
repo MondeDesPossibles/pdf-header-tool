@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - install.bat
 :: Version : 0.0.1
-:: Build   : build-2026.02.20.13
+:: Build   : build-2026.02.20.14
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: ==============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -13,8 +13,9 @@ cls
 
 set "SCRIPT_DIR=%~dp0"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_install.log"
-set "BUILD_ID=build-2026.02.20.13"
+set "BUILD_ID=build-2026.02.20.14"
 set "PYTHON_CMD=python"
+set "PY_EXE="
 
 echo [%date% %time%] Debut installation > "%LOG_FILE%"
 echo [%date% %time%] OS=%OS% >> "%LOG_FILE%"
@@ -63,19 +64,34 @@ if errorlevel 1 goto :nopython
 
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
 call :log_ok "Python detecte: !PY_VER!"
+for /f "tokens=*" %%p in ('python -c "import sys; print(sys.executable)" 2^>^&1') do set "PY_EXE=%%p"
+call :log "Python executable: !PY_EXE!"
+echo(!PY_EXE! | find /I "WindowsApps" >nul
+if not errorlevel 1 goto :storepython
+echo(!PY_EXE! | find /I "PythonSoftwareFoundation.Python." >nul
+if not errorlevel 1 goto :storepython
 goto :runinstaller
 
 :nopython
-call :log "Python non detecte, ouverture Microsoft Store via commande python"
+call :log "Python non detecte, ouverture python.org/downloads"
 echo.
 echo   Python n'est pas detecte.
-echo   Installation via Microsoft Store en cours...
-echo   Installez Python puis revenez sur cette fenetre.
+echo   Installez Python manuellement depuis python.org puis relancez install.bat.
 echo.
+start "" "https://www.python.org/downloads/"
+pause
+endlocal
+exit /b 1
 
-python >> "%LOG_FILE%" 2>&1
-timeout /t 60 >nul
-goto :checkpython
+:storepython
+call :log_error "Python Microsoft Store detecte (non supporte pour installation stable)"
+echo   Python Microsoft Store detecte.
+echo   Pour une installation stable, installez Python officiel depuis python.org.
+echo   URL : https://www.python.org/downloads/
+start "" "https://www.python.org/downloads/"
+pause
+endlocal
+exit /b 1
 
 :runinstaller
 if not exist "%SCRIPT_DIR%install.py" (
