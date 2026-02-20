@@ -606,9 +606,9 @@ class PDFHeaderApp:
             y0 = self.img_offset_y
             y1 = self.img_offset_y + self.page_h_px
             self.canvas.create_line(x0, hover_cy, x1, hover_cy,
-                                    fill="#5577ee44", width=1, dash=(4,4), tags="overlay")
+                                    fill="#5577ee", width=1, dash=(4,4), tags="overlay")
             self.canvas.create_line(hover_cx, y0, hover_cx, y1,
-                                    fill="#5577ee44", width=1, dash=(4,4), tags="overlay")
+                                    fill="#5577ee", width=1, dash=(4,4), tags="overlay")
 
         # Texte positionné
         cx, cy = self._ratio_to_canvas(self.pos_ratio_x, self.pos_ratio_y)
