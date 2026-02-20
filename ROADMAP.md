@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.4.0
-# Build   : build-2026.02.20.20
+# Build   : build-2026.02.20.22
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -22,6 +22,7 @@ Chaque étape doit être validée avant de passer à la suivante.
   - Étape 2 -> `v0.2.0`
   - Étape 3 -> `v0.3.0`
   - Étape 4 -> `v0.4.0`
+  - Étape 4.5 -> `v0.4.5`
   - Étape 5 -> `v0.5.0`
   - Étape 6 -> `v0.6.0`
   - Étape 7 -> `v0.7.0`
@@ -174,6 +175,55 @@ Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 
 ### Gestion des limites
 - Retour automatique à la ligne en respectant les mots (pas de coupure au milieu d'un mot)
+
+---
+
+## Étape 4.5 — Refactoring technique intermédiaire
+**Statut : À faire — dépend des Étapes 1 à 4**
+**Version cible : 0.4.5**
+
+Objectif: réduire la complexité de `pdf_header.py`, améliorer la maintenabilité
+et préparer les évolutions (dont traduction UI).
+
+### Découpage du code
+- `pdf_header.py` devient un point d'entrée léger (bootstrap + lancement)
+- Extraire la logique métier dans des modules dédiés:
+  - `app/config.py`
+  - `app/models.py`
+  - `app/services/pdf_service.py`
+  - `app/services/layout_service.py`
+  - `app/services/font_service.py`
+  - `app/ui/...` (fenêtre principale, sidebar, panneau liste)
+- Isoler les fonctions pures (layout, calculs positions, wrapping) pour faciliter les tests
+
+### Éliminer les valeurs en dur
+- Centraliser les couleurs hex dans des constantes/thèmes
+- Centraliser les polices et fallbacks par plateforme
+- Centraliser les tailles, espacements, marges, durées d'animation, tailles widgets
+- Centraliser tous les textes UI dans des ressources dédiées
+- Supprimer les "magic numbers" (coordonnées, offsets, tailles fixes) au profit de constantes nommées
+
+### Préparation i18n (traduction)
+- Introduire un dictionnaire de traductions par langue (`fr`, `en`) avec clé stable
+- Remplacer les chaînes UI codées en dur par des clés (`t("sidebar.apply")`, etc.)
+- Prévoir un fallback automatique sur le français si clé absente
+- Ajouter un paramètre de langue dans la config utilisateur
+
+### Fiabilisation et qualité
+- Ajouter des tests unitaires ciblés:
+  - composition de texte (préfixe/suffixe/date)
+  - wrapping par mots
+  - calcul de position/rotation
+- Uniformiser la gestion d'erreurs et les messages utilisateur
+- Introduire des logs structurés par module avec niveaux (`INFO`, `WARNING`, `ERROR`)
+- Ajouter une validation stricte de configuration (chargement/migration JSON)
+
+### Suggestions additionnelles de refactor
+- Introduire des dataclasses pour les états UI et les éléments PDF
+- Ajouter du typage progressif (`typing`) sur les fonctions critiques
+- Séparer clairement état applicatif, logique métier et rendu UI
+- Préparer une couche "adapters" pour isoler PyMuPDF et limiter l'impact des changements de lib
+- Définir un protocole de migration de config versionnée (`config_version`)
 
 ---
 

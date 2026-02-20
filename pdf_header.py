@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
 # Version : 0.4.0
-# Build   : build-2026.02.20.20
+# Build   : build-2026.02.20.22
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
 VERSION     = "0.4.0"
-BUILD_ID    = "build-2026.02.20.20"
+BUILD_ID    = "build-2026.02.20.22"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
