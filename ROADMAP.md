@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.2.0
-# Build   : build-2026.02.20.17
+# Version : 0.3.0
+# Build   : build-2026.02.20.18
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -94,8 +94,8 @@ ne quitte plus).
 ---
 
 ## Étape 3 — Panneau liste des fichiers
-**Statut : À faire — dépend de l'Étape 2**
-**Version cible : 0.3.0**
+**Statut : Terminé ✓**
+**Version livrée : 0.3.0**
 
 Ajouter un panneau à droite de la prévisualisation listant tous les PDFs chargés.
 

@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
-# Version : 0.2.0
-# Build   : build-2026.02.20.17
+# Version : 0.3.0
+# Build   : build-2026.02.20.18
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.2.0"
-BUILD_ID    = "build-2026.02.20.17"
+VERSION     = "0.3.0"
+BUILD_ID    = "build-2026.02.20.18"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -192,10 +192,13 @@ class PDFHeaderApp:
         self.pos_ratio_x = self.cfg.get("last_x_ratio", 0.85)
         self.pos_ratio_y = self.cfg.get("last_y_ratio", 0.97)
 
+        self.file_states = {}
         self._build_ui()
         self.root.update_idletasks()
 
         if self.pdf_files:
+            self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
+            self._populate_file_panel()
             self._load_pdf()
         else:
             self._show_welcome_screen()
@@ -237,6 +240,12 @@ class PDFHeaderApp:
 
         self._sidebar_interactive = []
         self._build_sidebar(sidebar)
+
+        # ── Panneau fichiers (droit) ──
+        self.file_panel = ctk.CTkFrame(body, fg_color="#1e1e25", width=220, corner_radius=0)
+        self.file_panel.pack(side="right", fill="y")
+        self.file_panel.pack_propagate(False)
+        self._build_file_panel(self.file_panel)
 
         # ── Canvas ──
         self.canvas_frame = ctk.CTkFrame(body, fg_color="#141418", corner_radius=0)
@@ -426,6 +435,109 @@ class PDFHeaderApp:
         self._sidebar_interactive.append(entry)
         return frame
 
+    # -------------------------------------------------- Panneau fichiers ---
+
+    def _build_file_panel(self, parent):
+        ctk.CTkLabel(parent, text="FICHIERS",
+                     fg_color="transparent", text_color="#555566",
+                     font=("Segoe UI", 8, "bold"),
+                     anchor="w").pack(anchor="w", padx=10, pady=(10, 4))
+        ctk.CTkFrame(parent, fg_color="#3a3a4a", height=1,
+                     corner_radius=0).pack(fill="x", padx=10)
+
+        self.file_cards_scroll = ctk.CTkScrollableFrame(
+            parent, fg_color="#1e1e25", corner_radius=0
+        )
+        self.file_cards_scroll.pack(fill="both", expand=True)
+
+        self.file_card_frames = {}
+        self.file_card_badges = {}
+
+        self.lbl_file_counter = ctk.CTkLabel(
+            parent, text="0 / 0 fichiers traités",
+            fg_color="#111116", text_color="#555566",
+            font=("Segoe UI", 9)
+        )
+        self.lbl_file_counter.pack(fill="x", pady=4)
+
+    def _populate_file_panel(self):
+        for frame in self.file_card_frames.values():
+            frame.destroy()
+        self.file_card_frames = {}
+        self.file_card_badges = {}
+
+        for i, path in enumerate(self.pdf_files):
+            self._create_file_card(i, path)
+
+        self._refresh_file_counter()
+
+    def _create_file_card(self, idx, path):
+        frame = ctk.CTkFrame(self.file_cards_scroll,
+                             fg_color="#2a2a35", corner_radius=6)
+        frame.pack(fill="x", padx=6, pady=3)
+        frame.bind("<Button-1>", lambda e, i=idx: self._jump_to_file(i))
+
+        name_lbl = ctk.CTkLabel(frame, text=path.stem,
+                                 fg_color="transparent", text_color="#dddddd",
+                                 font=("Segoe UI", 10), anchor="w",
+                                 wraplength=180)
+        name_lbl.pack(anchor="w", padx=8, pady=(6, 0))
+        name_lbl.bind("<Button-1>", lambda e, i=idx: self._jump_to_file(i))
+
+        badge_lbl = ctk.CTkLabel(frame, text="",
+                                  fg_color="transparent", text_color="#888888",
+                                  font=("Segoe UI", 8), anchor="w")
+        badge_lbl.pack(anchor="w", padx=8, pady=(0, 6))
+        badge_lbl.bind("<Button-1>", lambda e, i=idx: self._jump_to_file(i))
+
+        self.file_card_frames[idx] = frame
+        self.file_card_badges[idx] = badge_lbl
+
+    def _refresh_card(self, idx):
+        if idx not in self.file_card_frames:
+            return
+        frame = self.file_card_frames[idx]
+        badge = self.file_card_badges[idx]
+        state = self.file_states.get(idx, "non_traite")
+
+        if idx == self.idx:
+            frame.configure(fg_color="#1a2a4a")
+            badge.configure(text="▶ En cours", text_color="#aac4ff")
+        elif state == "traite":
+            frame.configure(fg_color="#1a3a1a")
+            badge.configure(text="✓ Modifié", text_color="#55bb77")
+        elif state == "passe":
+            frame.configure(fg_color="#252528")
+            badge.configure(text="→ Ignoré", text_color="#666677")
+        elif state == "erreur":
+            frame.configure(fg_color="#3a1a1a")
+            badge.configure(text="⚠ Erreur", text_color="#ee5555")
+        else:
+            frame.configure(fg_color="#2a2a35")
+            badge.configure(text="", text_color="#888888")
+
+    def _refresh_all_cards(self):
+        for i in range(len(self.pdf_files)):
+            self._refresh_card(i)
+        self._refresh_file_counter()
+
+    def _refresh_file_counter(self):
+        done = sum(1 for s in self.file_states.values() if s in ("traite", "passe"))
+        total = len(self.pdf_files)
+        self.lbl_file_counter.configure(text=f"{done} / {total} fichiers traités")
+
+    def _find_next_untreated(self):
+        n = len(self.pdf_files)
+        for offset in range(1, n):
+            i = (self.idx + offset) % n
+            if self.file_states.get(i, "non_traite") == "non_traite":
+                return i
+        return None
+
+    def _jump_to_file(self, idx):
+        self.idx = idx
+        self._load_pdf()
+
     # --------------------------------------------------- Écran d'accueil ---
 
     def _show_welcome_screen(self):
@@ -483,7 +595,9 @@ class PDFHeaderApp:
         if not paths:
             return
         self.pdf_files = [Path(p) for p in paths]
+        self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
 
@@ -495,7 +609,9 @@ class PDFHeaderApp:
         if not self.pdf_files:
             messagebox.showwarning("Aucun fichier", "Aucun fichier PDF trouvé dans ce dossier.")
             return
+        self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
 
@@ -545,11 +661,6 @@ class PDFHeaderApp:
     # --------------------------------------------------------- PDF courant ----
 
     def _load_pdf(self):
-        if self.idx >= len(self.pdf_files):
-            messagebox.showinfo("Terminé", "Tous les fichiers ont été traités !")
-            self.root.quit()
-            return
-
         path = self.pdf_files[self.idx]
         self.lbl_filename.configure(text=f"  {path.name}  ")
         self.lbl_progress.configure(
@@ -560,6 +671,7 @@ class PDFHeaderApp:
         self.doc = fitz.open(str(path))
         self._on_mode_change()
         self._render_preview()
+        self._refresh_all_cards()
 
     # --------------------------------------------------------- Rendu canvas ---
 
@@ -699,6 +811,8 @@ class PDFHeaderApp:
             doc_out.close()
         except Exception as e:
             messagebox.showerror("Erreur", str(e))
+            self.file_states[self.idx] = "erreur"
+            self._refresh_all_cards()
             return
 
         # Sauvegarder la config
@@ -715,11 +829,25 @@ class PDFHeaderApp:
         })
         save_config(self.cfg)
 
-        self.idx += 1
+        self.file_states[self.idx] = "traite"
+        next_idx = self._find_next_untreated()
+        if next_idx is None:
+            self._refresh_all_cards()
+            messagebox.showinfo("Terminé", "Tous les fichiers ont été traités !")
+            self.root.quit()
+            return
+        self.idx = next_idx
         self._load_pdf()
 
     def _skip(self):
-        self.idx += 1
+        self.file_states[self.idx] = "passe"
+        next_idx = self._find_next_untreated()
+        if next_idx is None:
+            self._refresh_all_cards()
+            messagebox.showinfo("Terminé", "Tous les fichiers ont été traités !")
+            self.root.quit()
+            return
+        self.idx = next_idx
         self._load_pdf()
 
 # ---------------------------------------------------------------------------
