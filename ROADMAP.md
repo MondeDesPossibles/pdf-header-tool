@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.3.0
-# Build   : build-2026.02.20.18
+# Build   : build-2026.02.20.19
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -396,12 +396,14 @@ nouvel élément créé et à chaque nouvelle session.
 | Couleur par défaut | Swatch + affichage hex (comme dans la sidebar) |
 | Police par défaut | Menu déroulant (`ctk.CTkOptionMenu`) parmi les polices PDF standard PyMuPDF : Courier, Helvetica, Times |
 | Taille par défaut | Champ numérique (`ctk.CTkEntry` avec validation 4–72) |
+| Taille de l'interface | Champ numérique `ui_font_size` (plage 8–18, défaut 12) — applique la taille de base à tous les labels de la sidebar, topbar, bottombar et panneau fichiers |
 
 #### Comportement par défaut
 | Paramètre | Widget |
 |-----------|--------|
 | Option pages | Toggle : Toutes les pages / Première page uniquement |
 | Mode de sauvegarde | Boutons radio : Sous-dossier / Même dossier / Écraser / Choisir |
+| Activation des logs debug | Toggle (case à cocher) — active l'écriture dans `INSTALL_DIR/pdf_header_debug.log` (mode append). Utile pour diagnostiquer les problèmes remontés par les utilisateurs. |
 
 #### Boutons
 - **Enregistrer** → sauvegarde dans `pdf_header_config.json` sous clé `preferences`
@@ -424,7 +426,9 @@ nouvel élément créé et à chaque nouvelle session.
     "default_font_name": "cour",
     "default_font_size": 8,
     "default_all_pages": true,
-    "default_save_mode": "subfolder"
+    "default_save_mode": "subfolder",
+    "ui_font_size": 12,
+    "debug_enabled": false
   }
 }
 ```

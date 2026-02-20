@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.3.0
-# Build   : build-2026.02.20.18
+# Build   : build-2026.02.20.19
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -44,7 +44,7 @@ pdf-header-tool/
 
 ### Config persistante
 - Fichier : `pdf_header_config.json` dans `INSTALL_DIR`
-- Clés : `text_mode`, `prefixe`, `suffixe`, `custom`, `color_hex`, `font_size`, `all_pages`, `last_x_ratio`, `last_y_ratio`
+- Clés : `text_mode`, `prefixe`, `suffixe`, `custom`, `color_hex`, `font_size`, `all_pages`, `last_x_ratio`, `last_y_ratio`, `ui_font_size`, `debug_enabled`
 - La position est stockée en **ratio (0.0 à 1.0)** de la page pour être indépendante de la résolution
 
 ### Classe PDFHeaderApp
@@ -82,6 +82,61 @@ Interface principale. Cycle de vie :
 - Windows 11 ✓ (testé Python 3.14.3)
 - Linux EndeavourOS ✓ (lancement direct sans install.bat)
 - Python 3.8+ requis
+
+---
+
+## Logging et debug
+
+### Principe
+- La fonction `_debug_log()` est **toujours présente** dans le code — ne jamais la supprimer
+- L'enregistrement est contrôlé par `_DEBUG_ENABLED` (global bool) + clé `"debug_enabled"` dans la config
+- Par défaut : **désactivé** — activation prévue dans la fenêtre Préférences (Étape 13)
+
+### Événements à logger (quand activé)
+| Événement | Données |
+|-----------|---------|
+| OPEN_FILES / OPEN_FOLDER | liste des fichiers chargés |
+| RENDER | canvas_wh, scale, page_pt, page_px, tk_scaling |
+| CLICK | filename, canvas coords, offset, page_px, ratio, canvas_wh |
+| APPLY | filename, ratio, page_pt, x_pt, y_pt — puis par page : rect + fitz.Point |
+| SKIP | filename, index |
+
+### Fichier log
+- Chemin : `INSTALL_DIR / "pdf_header_debug.log"`
+- Mode append (pas d'écrasement entre sessions)
+- Format : `[YYYY-MM-DD HH:MM:SS] EVENT données`
+
+### Pattern dans le code
+```python
+_DEBUG_ENABLED = False   # module-level
+_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+
+def _debug_log(msg: str):
+    if not _DEBUG_ENABLED:
+        return
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+# Dans PDFHeaderApp.__init__, après load_config() :
+global _DEBUG_ENABLED
+_DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+```
+
+---
+
+## Taille de l'interface (ui_font_size)
+
+- Taille de base par défaut : **12 pt** — clé `"ui_font_size"` dans la config (plage 8–18)
+- Correspondance (actuellement hardcodée, sera dynamique à l'Étape 13) :
+  - Section headers (ALLCAPS) : `ui_font_size - 2`
+  - Labels standards : `ui_font_size`
+  - Texte monospace (Courier) : `ui_font_size - 1`
+  - Texte secondaire / badges : `ui_font_size - 2`
 
 ---
 
@@ -315,3 +370,5 @@ sys.excepthook = _global_exception_handler
 - Messages d'erreur : français, clairs, sans jargon technique
 - Incrémenter `VERSION` à chaque étape et créer le tag git correspondant
 - Pour le cycle en cours, respecter la progression `0.0.1` -> `1.0.0` définie dans `ROADMAP.md`
+- Taille UI par défaut : **12 pt** — clé `ui_font_size` dans `DEFAULT_CONFIG`
+- Logs debug : toujours conserver `_debug_log()` dans le code — toggle activable via Préférences (Étape 13)
