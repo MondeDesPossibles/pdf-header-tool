@@ -28,14 +28,14 @@ ICON_NAME    = "pdf_header.ico"
 # Utilitaires
 # ---------------------------------------------------------------------------
 def step(msg):
-    print(f"\n  ▶  {msg}")
+    print(f"\n  >  {msg}")
 
 def ok(msg=""):
-    print(f"      ✓  {msg}" if msg else "      ✓  OK")
+    print(f"      [OK] {msg}" if msg else "      [OK] OK")
 
 def fail(msg):
-    print(f"      ✗  ERREUR : {msg}")
-    input("\nAppuyez sur Entrée pour quitter…")
+    print(f"      [ERROR] {msg}")
+    input("\nAppuyez sur Entree pour quitter...")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ def install_files():
             shutil.copy2(src, dst)
             ok(fname)
         else:
-            print(f"      ⚠  {fname} introuvable, ignoré")
+            print(f"      [WARN] {fname} introuvable, ignore")
 
     # Icône (optionnelle)
     icon_src = SCRIPT_DIR / ICON_NAME
@@ -77,16 +77,16 @@ def setup_venv():
     step("Installation des dépendances (pymupdf, Pillow)")
     pkgs = ["pymupdf", "Pillow"]
     for pkg in pkgs:
-        print(f"      → {pkg}…", end="", flush=True)
+        print(f"      -> {pkg}...", end="", flush=True)
         try:
             subprocess.check_call(
                 [str(VENV_PYTHON), "-m", "pip", "install", pkg, "--quiet",
                  "--disable-pip-version-check"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            print(" ✓")
+            print(" [OK]")
         except subprocess.CalledProcessError:
-            print(f"\n      ✗  Impossible d'installer {pkg}")
+            print(f"\n      [ERROR] Impossible d'installer {pkg}")
             fail(f"Vérifiez votre connexion Internet et relancez install.bat")
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ def create_shortcuts(launcher_bat):
     if _create_shortcut(str(launcher_bat), str(lnk_desktop), APP_NAME):
         ok(f"Raccourci bureau : {lnk_desktop}")
     else:
-        print("      ⚠  Raccourci bureau non créé (PowerShell indisponible ?)")
+        print("      [WARN] Raccourci bureau non cree (PowerShell indisponible ?)")
 
     # Menu Démarrer
     start_menu = Path(os.environ.get("APPDATA", "")) / \
@@ -161,7 +161,7 @@ def create_shortcuts(launcher_bat):
     if _create_shortcut(str(launcher_bat), str(lnk_start), APP_NAME):
         ok(f"Menu Démarrer : {lnk_start}")
     else:
-        print("      ⚠  Raccourci menu Démarrer non créé")
+        print("      [WARN] Raccourci menu Demarrer non cree")
 
 # ---------------------------------------------------------------------------
 # Main
@@ -177,11 +177,11 @@ def main():
     create_shortcuts(launcher)
 
     print("\n" + "=" * 60)
-    print(f"  ✓  Installation terminée !")
+    print(f"  [OK] Installation terminee !")
     print(f"     Dossier : {INSTALL_DIR}")
     print(f"     Lancez l'application depuis le raccourci sur le bureau")
     print("=" * 60)
-    input("\nAppuyez sur Entrée pour fermer…")
+    input("\nAppuyez sur Entree pour fermer...")
 
 if __name__ == "__main__":
     main()

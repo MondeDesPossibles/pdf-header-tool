@@ -14,7 +14,7 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
 ├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : vérifie Python, propose python.org/curl, log, lance install.py
+├── install.bat       # Wrapper bat : vérifie Python, tente winget (upgrade/install), fallback curl, log, lance install.py
 ├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
 ├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md         # Ce fichier
@@ -84,14 +84,16 @@ Interface principale. Cycle de vie :
 1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
 2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
 3. Vérifie Python simplement avec `python --version`
-4. Si Python absent : propose ouverture de `python.org` ou téléchargement auto via `curl.exe`
-5. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo)
-6. Lance l'installateur Python (silencieux), puis `install.py`
-7. Log le code de retour de chaque étape critique
+4. Si Python est déjà présent et `winget` disponible : tente `winget upgrade --id Python.Python.3`
+5. Si Python absent : propose ouverture de `python.org` ou installation auto (`winget install --id Python.Python.3.13`, puis fallback `curl.exe`)
+6. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo) en mode fallback `curl`
+7. Lance l'installateur Python (silencieux) si fallback `curl`, puis `install.py`
+8. Log le code de retour de chaque étape critique
 
 ### Méthode de téléchargement Python
-1. `curl.exe` — méthode unique de téléchargement auto
-2. En cas d'échec/absence de curl : fallback vers `python.org/downloads`
+1. `winget` — méthode prioritaire (`upgrade` si Python présent, `install` si absent)
+2. `curl.exe` — fallback si `winget` absent ou en échec
+3. En cas d'échec/absence de `curl` : fallback vers `python.org/downloads`
 
 ### Fichier log
 - Chemin : `<dossier_install>\pdf_header_install.log`
@@ -111,7 +113,7 @@ Interface principale. Cycle de vie :
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
 - `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
-- `install.bat` : logique simplifiée (détection `python --version`, téléchargement auto via `curl` + fallback python.org)
+- `install.bat` : logique simplifiée (détection `python --version`, priorité `winget`, fallback `curl`, fallback final python.org)
 
 ---
 

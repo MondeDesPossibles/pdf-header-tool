@@ -32,8 +32,9 @@ Chaque étape doit être validée avant de passer à la suivante.
 
 - Encodage console : ajout `chcp 65001`, suppression des caractères Unicode dans les `echo`
 - Vérification Python simplifiée via `python --version`
-- Si Python absent : menu (ouvrir python.org ou téléchargement auto via `curl.exe`)
-- Téléchargement Python via `curl.exe` avec retries et vérification d'intégrité (taille > 1 Mo)
+- Si Python présent et `winget` disponible : tentative `winget upgrade --id Python.Python.3`
+- Si Python absent : menu (ouvrir python.org ou installation auto `winget`, puis fallback `curl.exe`)
+- Téléchargement fallback via `curl.exe` avec retries et vérification d'intégrité (taille > 1 Mo)
 - Log complet dans `pdf_header_install.log` (dossier de `install.bat`)
 
 ---

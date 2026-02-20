@@ -65,14 +65,14 @@ if errorlevel 1 (
 
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
 call :log_ok "Python detecte: !PY_VER!"
-goto :run_installer
+goto :python_present
 
 :python_missing_menu
 echo.
 echo   Python n'est pas detecte.
 echo.
 echo   1. Ouvrir python.org (manuel)
-echo   2. Telechargement auto via curl
+echo   2. Installation auto (winget puis curl)
 echo   3. Annuler
 echo.
 set /p CHOICE="   Votre choix (1, 2 ou 3): "
@@ -83,6 +83,25 @@ if "%CHOICE%"=="2" goto :download_python
 if "%CHOICE%"=="3" goto :cancelled
 echo   Choix invalide.
 goto :python_missing_menu
+
+:python_present
+call :log "Etape: tentative winget upgrade Python.Python.3"
+call :check_winget
+if errorlevel 1 (
+    call :log "winget introuvable, upgrade ignore"
+    goto :post_python_install
+)
+
+echo   Mise a jour Python via winget en cours...
+winget upgrade --id Python.Python.3 -e --accept-package-agreements --accept-source-agreements --disable-interactivity >> "%LOG_FILE%" 2>&1
+set "WINGET_UPGRADE_EXIT=%errorlevel%"
+call :log "Code retour winget upgrade: %WINGET_UPGRADE_EXIT%"
+if not "%WINGET_UPGRADE_EXIT%"=="0" (
+    call :log "winget upgrade non applique (non bloquant)"
+) else (
+    call :log_ok "winget upgrade Python applique"
+)
+goto :post_python_install
 
 :open_python_org
 call :log "Ouverture python.org/downloads"
@@ -95,6 +114,26 @@ endlocal
 exit /b 0
 
 :download_python
+call :log "Etape: tentative winget install Python.Python.3.13"
+call :check_winget
+if errorlevel 1 (
+    call :log "winget introuvable, fallback curl"
+    goto :download_python_curl
+)
+
+echo   Installation Python via winget en cours...
+winget install --id Python.Python.3.13 -e --accept-package-agreements --accept-source-agreements --disable-interactivity >> "%LOG_FILE%" 2>&1
+set "WINGET_INSTALL_EXIT=%errorlevel%"
+call :log "Code retour winget install: %WINGET_INSTALL_EXIT%"
+if "%WINGET_INSTALL_EXIT%"=="0" (
+    call :log_ok "winget install Python reussi"
+    goto :post_python_install
+)
+
+call :log "winget install a echoue, fallback curl"
+goto :download_python_curl
+
+:download_python_curl
 call :log "Etape: verification curl.exe"
 curl.exe --version >nul 2>&1
 if errorlevel 1 (
@@ -109,8 +148,8 @@ echo.
 echo   Telechargement de Python %PY_VERSION% (%PY_ARCH%)...
 echo.
 
-curl.exe -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 ^
-    -o "%PY_INSTALLER%" "%PY_URL%" >> "%LOG_FILE%" 2>&1
+call :log "Trace: lancement commande curl"
+curl.exe -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "%PY_INSTALLER%" "%PY_URL%" >> "%LOG_FILE%" 2>&1
 set "CURL_EXIT=%errorlevel%"
 call :log "Code retour curl: %CURL_EXIT%"
 if not "%CURL_EXIT%"=="0" (
@@ -147,18 +186,54 @@ if not "%PY_INSTALL_EXIT%"=="0" (
 del "%PY_INSTALLER%" >nul 2>&1
 call :log "Installateur temporaire supprime"
 
+:post_python_install
 call :log "Etape: rafraichissement PATH session"
-set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\%PY_FOLDER%;%LOCALAPPDATA%\Programs\Python\%PY_FOLDER%\Scripts"
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Programs\Python\Python313\Scripts"
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts"
+set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts"
 
-call :log "Etape: nouvelle verification Python"
-python --version >nul 2>&1
+call :resolve_python_cmd
 if errorlevel 1 (
     call :fail "Python installe mais non detecte. Relancez le script."
 )
 
-for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
+call :log "Etape: nouvelle verification Python"
+"%PYTHON_CMD%" --version >nul 2>&1
+if errorlevel 1 (
+    call :fail "Python installe mais non detecte. Relancez le script."
+)
+
+for /f "tokens=*" %%v in ('"%PYTHON_CMD%" --version 2^>^&1') do set "PY_VER=%%v"
 call :log_ok "Python pret: !PY_VER!"
 goto :run_installer
+
+:check_winget
+winget --version >nul 2>&1
+if errorlevel 1 exit /b 1
+exit /b 0
+
+:resolve_python_cmd
+set "PYTHON_CMD="
+
+if exist "%LOCALAPPDATA%\Programs\Python\Python313\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+if not defined PYTHON_CMD if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+
+if not defined PYTHON_CMD (
+    python --version >nul 2>&1
+    if not errorlevel 1 set "PYTHON_CMD=python"
+)
+
+if not defined PYTHON_CMD (
+    py --version >nul 2>&1
+    if not errorlevel 1 set "PYTHON_CMD=py"
+)
+
+if defined PYTHON_CMD (
+    call :log "Commande Python resolue: %PYTHON_CMD%"
+    exit /b 0
+)
+exit /b 1
 
 :run_installer
 if not exist "%SCRIPT_DIR%install.py" (
@@ -170,6 +245,7 @@ echo.
 echo   Installation de PDF Header Tool en cours...
 echo.
 
+call :log "Commande Python utilisee: %PYTHON_CMD%"
 "%PYTHON_CMD%" "%SCRIPT_DIR%install.py" >> "%LOG_FILE%" 2>&1
 set "INSTALL_PY_RESULT=%errorlevel%"
 call :log "Code retour install.py: %INSTALL_PY_RESULT%"
