@@ -34,18 +34,24 @@ pdf-header-tool/          # repo git
 └── README.md             # Documentation utilisateur
 ```
 
-Distribution Windows générée par `build_dist.py` :
+Distribution Windows générée par `build_dist.py` (bundle complet, offline) :
 
 ```
 PDFHeaderTool/            # dossier de distribution (zippé pour livraison)
-├── python/               # Python Embeddable 3.11.x (python311._pth patché)
-├── site-packages/        # dépendances pip (pymupdf, pillow, customtkinter)
-│                         # installées par setup.bat au premier lancement
+├── python/               # Python Embeddable 3.11.x (python3XX._pth patché)
+│   ├── python.exe        # interpréteur
+│   ├── python311.dll
+│   ├── python311.zip     # stdlib Python
+│   ├── _tkinter.pyd      # bridge C Tcl/Tk (présent dans embed)
+│   ├── tcl86t.dll        # ← extrait du NuGet (fix crash tkinter)
+│   ├── tk86t.dll         # ← extrait du NuGet
+│   ├── tcl/              # ← extrait du NuGet
+│   └── tk/               # ← extrait du NuGet
+├── site-packages/        # dépendances pré-installées (pymupdf, pillow, customtkinter)
+│                         # installées via pip cross-compilation par build_dist.py
 ├── pdf_header.py         # script principal (copie)
 ├── version.txt
-├── lancer.bat            # double-clic pour lancer
-├── setup.bat             # installation dépendances (appelé par lancer.bat)
-└── get-pip.py            # bundlé dans la distribution
+└── lancer.bat            # double-clic pour lancer → app démarre directement
 ```
 
 ### Cible (à partir de v0.4.7 — distribution portable + package)
@@ -214,43 +220,53 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 
 ## Distribution et lancement
 
-### Modèle actuel (v0.4.6+) — Python Embarqué portable
+### Modèle actuel (v0.4.6+) — bundle complet offline
 
-L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Aucun Python système requis.
+L'utilisateur dézipe et double-clique sur `lancer.bat`. Aucun Python, aucun internet requis.
+Toutes les dépendances (pymupdf, Pillow, customtkinter) et Tcl/Tk sont pré-installées dans le zip.
 
 **`lancer.bat` — point d'entrée utilisateur :**
 1. Active UTF-8 (`chcp 65001`)
 2. Vérifie la présence de `python\python.exe` (sanity check)
-3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` et attend
-4. Lance `python\python.exe pdf_header.py`
-5. Log dans `pdf_header_launch.log`
-
-**`setup.bat` — installation des dépendances (1er lancement) :**
-1. Installe pip via `get-pip.py` bundlé : `python\python.exe get-pip.py --no-warn-script-location`
-2. Installe les dépendances dans `site-packages\` : `python\python.exe -m pip install --target=site-packages pymupdf pillow customtkinter`
-3. Log complet dans `pdf_header_install.log`
-4. Connexion internet requise au premier lancement
+3. Lance `python\python.exe pdf_header.py` directement
+4. Log dans `pdf_header_launch.log`
 
 **`build_dist.py` — script de build (dev-only) :**
-- Télécharge Python Embeddable 3.11.x depuis python.org (cache local dans `dist/`)
-- Patche `python3XX._pth` : décommente `import site` + ajoute `../site-packages`
-- Copie les fichiers du projet (pdf_header.py, lancer.bat, setup.bat, get-pip.py, version.txt)
-- Crée `dist/PDFHeaderTool-vX.Y.Z.zip`
+1. Télécharge Python Embeddable 3.11.x depuis python.org (cache `dist/`)
+2. Télécharge Python NuGet package pour extraire les DLLs Tcl/Tk (cache `dist/`)
+3. Extrait Python Embedded → `python/`
+4. Copie `tcl86t.dll`, `tk86t.dll`, `tcl/`, `tk/` depuis le NuGet → `python/`
+   (correction du crash tkinter : Python Embedded n'inclut pas ces DLLs)
+5. Patche `python3XX._pth` : décommente `import site` + ajoute `../site-packages`
+6. Installe les dépendances Windows dans `site-packages/` via pip cross-compilation :
+   `pip install --platform win_amd64 --python-version 311 --only-binary=:all: --target site-packages/ pymupdf pillow customtkinter`
+7. Copie les fichiers du projet (pdf_header.py, lancer.bat, version.txt)
+8. Crée `dist/PDFHeaderTool-vX.Y.Z.zip` (~35-45 Mo)
 - Usage : `python3 build_dist.py [--python-version 3.11.9]`
+- Connexion internet requise uniquement sur la machine de build (dev)
+
+**Pourquoi Tcl/Tk depuis NuGet :**
+Python Embedded inclut `_tkinter.pyd` mais pas les DLLs runtime (`tcl86t.dll`, `tk86t.dll`)
+ni les bibliothèques de scripts (`tcl/`, `tk/`). Sans ces fichiers, `import tkinter` échoue
+avec exit code 1. Le NuGet Python (.nupkg = ZIP) contient l'installation complète et permet
+d'extraire ces fichiers de façon fiable depuis Linux.
 
 **`_get_install_dir()` :**
 - Retourne `Path(__file__).parent` dans tous les cas (Windows et Linux — portable USB/réseau)
 
 **`_bootstrap()` :**
-- Vérifie que fitz, customtkinter, PIL sont importables — affiche un message d'erreur clair et quitte si absent
-- Sur Windows : les dépendances sont dans `site-packages/` (installées par setup.bat)
+- Vérifie que fitz, customtkinter, PIL sont importables — message d'erreur clair si absent
+- Sur Windows : dépendances dans `site-packages/` (pré-installées par build_dist.py)
 - Sur Linux : dépendances installées manuellement via `pip install pymupdf Pillow customtkinter`
 
 **Points d'attention pour toute modification des .bat :**
 - Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
 - Toujours logger avant ET après chaque opération critique
-- `python\python311._pth` doit avoir `import site` décommenté et `../site-packages` présent
-- Tester sur machine sans Python ET sur machine avec Python ancien ou Store
+- `python\python3XX._pth` doit avoir `import site` décommenté et `../site-packages` présent
+
+**`setup.bat` et `get-pip.py` :**
+- Conservés dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
+- Ne font PAS partie de la distribution zip (plus nécessaires depuis le bundle complet)
 
 ### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
 

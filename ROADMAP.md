@@ -206,12 +206,12 @@ le comportement ni la structure des fichiers. Zéro risque de régression.
 
 ---
 
-## Étape 4.6 — Distribution Python Embarqué (Windows, zero-install)
+## Étape 4.6 — Distribution Windows portable, bundle complet (zero-install, offline)
 **Statut : Terminé ✓**
 **Version livrée : 0.4.6**
 
-Passer d'un modèle "installer Python sur le système" à un modèle "portable" :
-l'utilisateur dézipe et double-clique. Aucun Python système requis sur Windows.
+Distribution Windows entièrement auto-contenue : Python Embarqué + Tcl/Tk + toutes les
+dépendances pré-installées. L'utilisateur dézipe et double-clique. Aucun internet requis.
 
 ### Nouvelle structure de distribution
 ```
