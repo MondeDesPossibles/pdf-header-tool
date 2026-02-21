@@ -1,3 +1,10 @@
+# ==============================================================================
+# PDF Header Tool — CLAUDE.md
+# Version : 0.4.0
+# Build   : build-2026.02.21.01
+# Repo    : MondeDesPossibles/pdf-header-tool
+# ==============================================================================
+
 # CLAUDE.md — Contexte du projet PDF Header Tool
 
 ## Ce que fait ce projet
@@ -10,16 +17,48 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 
 ## Architecture
 
+### Actuelle (v0.4.x — fichier unique)
+
 ```
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
 ├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : détection Python, téléchargement avec 3 méthodes, log, lance install.py
-├── version.txt       # Numéro de version (ex: 1.0.0) — lu par le système de MAJ
+├── install.bat       # Wrapper bat : vérifie Python, ouvre python.org si absent/Store, lance install.py
+├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
 ├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md         # Ce fichier
 └── README.md         # Documentation utilisateur
 ```
+
+### Cible (à partir de v0.4.6 / v0.4.7 — distribution portable + package)
+
+Distribution portable Windows — aucun Python système requis :
+
+```
+PDFHeaderTool/        # dossier de distribution (zippé pour livraison)
+├── python/           # Python Embeddable 3.11.x (Windows uniquement)
+├── site-packages/    # dépendances pip (pymupdf, pillow, customtkinter)
+├── app/              # package Python (à partir de v0.4.7)
+│   ├── config.py     # chargement/sauvegarde/migration config
+│   ├── models.py     # dataclasses : Config, Position, FontDescriptor
+│   ├── constants.py  # COLORS, SIZES, TIMINGS, BUILTIN_FONTS, PRIORITY_FONTS
+│   ├── update.py     # check_update(), logique GitHub
+│   ├── services/
+│   │   ├── pdf_service.py     # fitz : ouverture, insertion, sauvegarde
+│   │   ├── layout_service.py  # calculs position, rotation, ratio ↔ pts
+│   │   └── font_service.py    # découverte et sélection des polices
+│   └── ui/
+│       ├── main_window.py     # PDFHeaderApp (classe principale)
+│       ├── sidebar.py         # _build_sidebar() et sections
+│       └── file_panel.py      # panneau liste des fichiers
+├── pdf_header.py     # point d'entrée léger (5-10 lignes)
+├── version.txt
+├── lancer.bat        # double-clic pour lancer (Windows)
+├── setup.bat         # installation dépendances au premier lancement
+└── README.md
+```
+
+Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py`.
 
 ---
 
@@ -35,26 +74,45 @@ pdf-header-tool/
 - Constante `VERSION` en tête du script + `GITHUB_REPO`
 - Mise à jour silencieuse : télécharge le nouveau `pdf_header.py` et remplace le fichier courant
 
+### Constantes et fonctions module-level (v0.4.0)
+- `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
+- `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
+- `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
+- `DATE_FORMATS` : 8 formats de date prédéfinis `[(strftime_str, exemple), ...]`
+- `_get_font_dirs()` : retourne les dossiers de polices selon la plateforme
+- `_find_priority_fonts()` : lookup ciblé (pas de scan exhaustif) → `{display_name: Path}`
+- `_get_fitz_font_args(family, font_file, bold, italic)` : retourne `{"fontname": "cour"}` (built-in) ou `{"fontfile": str(path), "fontname": "F0"}` (système)
+
 ### Config persistante
 - Fichier : `pdf_header_config.json` dans `INSTALL_DIR`
-- Clés : `text_mode`, `prefixe`, `suffixe`, `custom`, `color_hex`, `font_size`, `all_pages`, `last_x_ratio`, `last_y_ratio`
+- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `debug_enabled`
+- Migration automatique depuis le format < v0.4.0 : ancienne clé `text_mode` → nouvelles clés `use_filename`/`use_custom` etc. (dans `load_config()`)
 - La position est stockée en **ratio (0.0 à 1.0)** de la page pour être indépendante de la résolution
 
 ### Classe PDFHeaderApp
 Interface principale. Cycle de vie :
-1. `__init__` → `_build_ui()` → `_load_pdf()`
+1. `__init__` → `_load_system_fonts()` → `_build_ui()` → `_load_pdf()`
 2. Pour chaque PDF : rendu via PyMuPDF → `_render_preview()` → interaction souris → `_apply()` ou `_skip()`
 3. `_apply()` : écrit le PDF dans `<dossier_source>_avec_entete/<meme_nom>.pdf`
 
 **Méthodes clés :**
-- `_build_ui()` : construit topbar + sidebar + canvas + bottombar
-- `_build_sidebar()` : options texte, color picker, taille, toggle pages
+- `_load_system_fonts()` : cherche les polices PRIORITY_FONTS sur disque, **doit être appelée avant `_build_ui()`**
+- `_build_ui()` : construit topbar + sidebar scrollable (`CTkScrollableFrame` dans outer frame 270px) + canvas + bottombar
+- `_section(parent, label)` : crée un header de section ALLCAPS dans la sidebar (converti de closure en méthode)
+- `_build_sidebar(parent)` : 9 sections — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION (grille 3×3), ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU
 - `_render_preview()` : convertit page PDF → image PIL → ImageTk, calcule scale + offsets
-- `_draw_overlay()` : dessine croix de guidage + aperçu texte sur le canvas
-- `_on_click()` : stocke la position en ratio X/Y
+- `_draw_overlay()` : dessine croix + aperçu texte avec rotation/bg/cadre approximatifs sur le canvas
+- `_on_click()` : stocke la position en ratio X/Y, puis `preset_position = "custom"`
 - `_on_motion()` : rafraîchit l'overlay + affiche coordonnées en pts PDF
-- `_apply()` : appelle `fitz.Page.insert_text()` avec police "cour" (Courier), sauvegarde config
-- `_get_header_text()` : retourne le texte à injecter (sans extension .pdf)
+- `_apply()` : utilise `fitz.Page.insert_textbox()` avec `lineheight`, bg rect, frame rect, underline, rotation
+- `_get_header_text()` : assemble `[date_prefix] [prefix] [stem|custom] [suffix] [date_suffix]` — utilise `path.stem` (sans extension)
+- `_on_preset_click(key)` / `_recalc_ratio_from_preset()` : gestion grille 3×3 + calcul ratio depuis marges
+- `_on_margins_change()` : trace sur `var_margin_x/y` → recalcule si preset actif
+- `_update_preset_highlight()` : surligne le bouton preset actif en bleu
+- `_on_text_change()` : recalcule le texte et rafraîchit l'overlay
+- `_update_date_options_visibility()` / `_update_frame_options_visibility()` / `_update_bg_options_visibility()` : masque/affiche les sous-sections avec `pack_forget()` / `pack(after=ref_widget)`
+- `_pick_frame_color()` / `_pick_bg_color()` : sélecteur de couleur tkinter
+- `_on_font_change(font_name)` : met à jour `cfg["font_file"]` selon la police sélectionnée
 
 **Coordonnées :**
 - Canvas tkinter : origine haut-gauche, Y croît vers le bas
@@ -78,42 +136,130 @@ Interface principale. Cycle de vie :
 
 ---
 
-## install.bat — Structure et comportement
+## Logging et debug
 
-### Fonctionnement général
-1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
-2. Crée immédiatement un fichier log : `%TEMP%\pdf_header_install.log`
-3. Recherche Python dans l'ordre : commande `python`, commande `py`, chemins courants
-4. Vérifie la version minimale (3.8+)
-5. Si Python absent ou trop ancien : propose téléchargement auto ou python.org
-6. Téléchargement avec 3 méthodes en cascade (voir ci-dessous)
-7. Vérifie l'intégrité du fichier téléchargé (taille > 1 Mo)
-8. Lance `install.py` et log le code de retour
+### Principe
+- La fonction `_debug_log()` est **toujours présente** dans le code — ne jamais la supprimer
+- L'enregistrement est contrôlé par `_DEBUG_ENABLED` (global bool) + clé `"debug_enabled"` dans la config
+- Par défaut : **désactivé** — activation prévue dans la fenêtre Préférences (Étape 13)
 
-### 3 méthodes de téléchargement Python (en cascade)
-1. `curl.exe` — natif Windows 11, `--retry 3`, timeout 30s, max 180s
-2. `PowerShell WebClient` — plus stable qu'Invoke-WebRequest
-3. `PowerShell Invoke-WebRequest` — dernier recours
+### Événements à logger (quand activé)
+| Événement | Données |
+|-----------|---------|
+| OPEN_FILES / OPEN_FOLDER | liste des fichiers chargés |
+| RENDER | canvas_wh, scale, page_pt, page_px, tk_scaling |
+| CLICK | filename, canvas coords, offset, page_px, ratio, canvas_wh |
+| APPLY | filename, ratio, page_pt, x_pt, y_pt — puis par page : rect + fitz.Point |
+| SKIP | filename, index |
 
 ### Fichier log
-- Chemin : `%TEMP%\pdf_header_install.log`
-- Affiché à l'écran dès le début et à chaque erreur
-- Contient : horodatage, OS, utilisateur, répertoire, toutes les étapes, codes de retour
+- Chemin : `INSTALL_DIR / "pdf_header_debug.log"`
+- Mode append (pas d'écrasement entre sessions)
+- Format : `[YYYY-MM-DD HH:MM:SS] EVENT données`
 
-### Points d'attention pour toute modification de install.bat
-- Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
-- Toujours logger avant ET après chaque opération critique
-- Tester sur une machine sans Python ET sur une machine avec Python ancien
-- La variable `PYTHON_CMD` doit être définie avant `:run_installer`
+### Pattern dans le code
+```python
+_DEBUG_ENABLED = False   # module-level
+_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+
+def _debug_log(msg: str):
+    if not _DEBUG_ENABLED:
+        return
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+# Dans PDFHeaderApp.__init__, après load_config() :
+global _DEBUG_ENABLED
+_DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+```
 
 ---
+
+## Taille de l'interface (ui_font_size)
+
+- Taille de base par défaut : **12 pt** — clé `"ui_font_size"` dans la config (plage 8–18)
+- Correspondance (actuellement hardcodée, sera dynamique à l'Étape 13) :
+  - Section headers (ALLCAPS) : `ui_font_size - 2`
+  - Labels standards : `ui_font_size`
+  - Texte monospace (Courier) : `ui_font_size - 1`
+  - Texte secondaire / badges : `ui_font_size - 2`
+
+---
+
+## Distribution et lancement
+
+### Modèle actuel (v0.4.x) — install.bat + venv système
+
+**Fonctionnement général :**
+1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
+2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
+3. Vérifie Python simplement avec `python --version`
+4. Si Python absent : ouvre `https://www.python.org/downloads/` et demande une installation manuelle
+5. Si Python Microsoft Store détecté : stoppe l'installation et redirige aussi vers `python.org`
+6. Lance `install.py` une fois un Python standard détecté
+7. Ferme automatiquement en cas de succès (pause uniquement en cas d'erreur)
+
+**Points d'attention pour toute modification de install.bat :**
+- Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
+- Toujours logger avant ET après chaque opération critique
+- La variable `PYTHON_CMD` doit être définie avant `:run_installer`
+- Cible d'installation actuelle : `%LOCALAPPDATA%\\PDFHeaderTool`
+
+### Modèle cible (à partir de l'Étape 4.6) — Python Embarqué portable
+
+L'objectif est de supprimer toute dépendance à un Python système sur Windows.
+L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Rien d'autre.
+
+**`lancer.bat` — nouveau rôle :**
+1. Active UTF-8 (`chcp 65001`)
+2. Vérifie la présence de `python\python.exe`
+3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` et attend
+4. Lance `python\python.exe pdf_header.py`
+5. Log dans `pdf_header_launch.log`
+
+**`setup.bat` — installation premier lancement (remplace install.bat + install.py) :**
+1. Installe pip via `get-pip.py` bundlé (pas de téléchargement)
+2. Installe les dépendances dans `site-packages\` via pip `--target`
+3. Log complet dans `pdf_header_install.log`
+
+**`_get_install_dir()` cible :**
+- Retourne `Path(__file__).parent` dans tous les cas (portable, plus de `%LOCALAPPDATA%`)
+
+**`_bootstrap()` cible :**
+- Devient un no-op (supprimé ou réduit à un `try: import fitz` de vérification)
+
+**Points d'attention pour toute modification (modèle cible) :**
+- Ne jamais utiliser de caractères Unicode dans les `echo`
+- Toujours logger avant ET après chaque opération critique
+- `python\python311._pth` doit avoir `import site` décommenté et `../site-packages` présent
+- Tester sur machine sans Python ET sur machine avec Python ancien ou Store
+
+---
+
+## Corrections à apporter (avant livraison)
+- **Croix de positionnement** : indique actuellement le coin supérieur-gauche de la zone de texte.
+  Objectif : la croix doit marquer le **centre géométrique** de la zone d'insertion.
+  Implémentation : estimer `text_w` via `fitz.Font.text_length()` et `text_h` via `nb_lignes × font_size × line_spacing`,
+  puis centrer le rect autour du point cliqué : `[x_pt - text_w/2, y_pt - text_h/2, x_pt + text_w/2, y_pt + text_h/2]`.
+  Mettre à jour `_draw_overlay()` en conséquence pour que l'aperçu soit lui aussi centré sur la croix.
+- **Libellé `date_source`** : la valeur `"file_mtime"` (interne) ne doit jamais être affichée dans l'UI.
+  Remplacer le libellé affiché par "Date de création fichier" tout en conservant la clé interne `"file_mtime"`.
 
 ## Problèmes connus et corrections déjà apportées
 - `_draw_overlay()` appelée avant que `self.canvas` existe → guard `if not hasattr(self, 'canvas'): return`
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
 - `install.bat` : encodage console `ÔÇö` → corrigé avec `chcp 65001` + caractères ASCII uniquement
-- `install.bat` : téléchargement Python via `Invoke-WebRequest` instable → remplacé par cascade curl/WebClient/Invoke-WebRequest
+- `install.bat` : logique simplifiée (détection `python --version`, redirection vers python.org si Python absent ou Store)
+- `letter_spacing` (v0.4.0) : stocké en config mais **non appliqué au PDF** — `insert_textbox()` n'a pas de paramètre charspacing natif ; sera implémenté via `TextWriter` à l'Étape 11
+- `angle=rotation` sur `canvas.create_text()` → protégé dans `try/except tk.TclError` pour compatibilité Tk 8.6+
+- Frames masquables (date/cadre/fond) : réinsertion via `pack(after=ref_widget)` et non `pack()` seul pour éviter le déplacement en fin de sidebar
+- Champs numériques marge/épaisseur : `tk.StringVar` (pas `DoubleVar`) pour éviter `TclError` quand l'utilisateur vide le champ — valeur parsée avec `try/float()` + fallback
 
 ---
 
@@ -131,9 +277,10 @@ Interface principale. Cycle de vie :
 
 ### 2. Périmètre des modifications
 
-- Modifier `pdf_header.py` en priorité — c'est le fichier central
-- Ne modifier `install.py` ou `install.bat` que si la tâche le requiert explicitement
-- Pour `install.bat` : ne jamais utiliser de caractères Unicode dans les `echo`, toujours logger avant/après chaque étape critique
+- **Avant l'Étape 4.7** : modifier `pdf_header.py` — c'est le fichier central.
+  À partir de l'Étape 4.7 : modifier le module concerné dans `app/` (voir Architecture cible)
+- Ne modifier `install.bat` / `setup.bat` / `lancer.bat` que si la tâche le requiert explicitement
+- Pour tout `.bat` : ne jamais utiliser de caractères Unicode dans les `echo`, toujours logger avant/après chaque étape critique
 - Toujours mettre à jour `CLAUDE.md` si l'architecture ou les méthodes changent
 - Toujours mettre à jour `ROADMAP.md` pour marquer l'étape comme terminée
 
@@ -146,7 +293,8 @@ Interface principale. Cycle de vie :
 - **Aucun `print()` de debug** dans le code final — utiliser le logger
 - **Aucun code commenté** laissé en place — supprimer proprement
 - **Aucune fonction inutilisée** — nettoyer après refactoring
-- Toute nouvelle dépendance doit être ajoutée dans `_bootstrap()` ET dans la section Dépendances de ce fichier
+- Jusqu'à l'Étape 4.6 : toute nouvelle dépendance doit être dans `_bootstrap()` ET dans la section Dépendances de ce fichier.
+  À partir de l'Étape 4.6 : les dépendances sont déclarées dans `setup.bat` (Python Embarqué)
 
 ### 4. Compatibilité obligatoire
 
@@ -160,9 +308,14 @@ Interface principale. Cycle de vie :
 
 - **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
 - **Mettre à jour `version.txt`** en même temps
-- Rappeler à l'utilisateur de créer le tag git :
+- **Format obligatoire du build global** : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`)
+- **À chaque itération**, incrémenter ce build global sur **tous** les fichiers de référence :
+  `pdf_header.py`, `install.py`, `install.bat`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
+- Conserver ce build visible dans les logs runtime (`Build install.bat: ...`, `install.py version: ...`, `pdf_header.py build ...`)
+- **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
+- Rappeler à l'utilisateur de créer le tag git correspondant :
   ```bash
-  git tag v1.X.0 && git push origin v1.X.0
+  git tag vX.Y.Z && git push origin vX.Y.Z
   ```
 
 ### 6. Ce que Claude Code ne doit JAMAIS faire
@@ -267,7 +420,7 @@ except Exception:
 |-----------|---------------------|
 | Python < 3.8 | Message explicite avec lien `python.org/downloads` |
 | Dépendance impossible à installer | Message avec instructions manuelles : `pip install pymupdf Pillow customtkinter` |
-| Venv corrompu | Détecter (`venv_python` inexistant après création), proposer de le recréer en supprimant `.venv/` |
+| Venv corrompu | (v0.4.x) Détecter (`venv_python` inexistant après création), proposer de le recréer en supprimant `.venv/`. À partir de l'Étape 4.6 : plus de venv — Python Embarqué |
 
 ### Gestionnaire global d'exceptions non catchées
 
@@ -296,9 +449,12 @@ sys.excepthook = _global_exception_handler
 
 ## Conventions de développement
 
-- Tout le code dans un seul fichier `pdf_header.py` (portable, auto-suffisant)
+- Jusqu'à l'Étape 4.7 : tout le code dans un seul fichier `pdf_header.py`.
+  À partir de l'Étape 4.7 : code découpé en package `app/` (voir Architecture cible)
 - GUI : CustomTkinter (à partir de v1.1.0) + `tk.Canvas` pour la prévisualisation
 - Langue de l'interface : français
 - Messages d'erreur : français, clairs, sans jargon technique
 - Incrémenter `VERSION` à chaque étape et créer le tag git correspondant
-
+- Pour le cycle en cours, respecter la progression `0.0.1` -> `1.0.0` définie dans `ROADMAP.md`
+- Taille UI par défaut : **12 pt** — clé `ui_font_size` dans `DEFAULT_CONFIG`
+- Logs debug : toujours conserver `_debug_log()` dans le code — toggle activable via Préférences (Étape 13)

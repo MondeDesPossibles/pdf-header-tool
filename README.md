@@ -1,3 +1,10 @@
+# ==============================================================================
+# PDF Header Tool — README.md
+# Version : 0.4.0
+# Build   : build-2026.02.21.01
+# Repo    : MondeDesPossibles/pdf-header-tool
+# ==============================================================================
+
 # PDF Header Tool
 
 Outil GUI Python pour insérer automatiquement le nom d'un fichier en en-tête de ses pages PDF.

@@ -1,6 +1,9 @@
 # ==============================================================================
-# PDF Header Tool — install.py
-# Installation Windows : AppData/Local, venv, raccourcis bureau + menu démarrer
+# PDF Header Tool - install.py
+# Version : 0.4.0
+# Build   : build-2026.02.21.01
+# Repo    : MondeDesPossibles/pdf-header-tool
+# Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
 
 import sys
@@ -9,33 +12,57 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# Nécessite Python 3.8+
+# Necessite Python 3.8+
 if sys.version_info < (3, 8):
-    print("Python 3.8 ou supérieur requis.")
+    print("Python 3.8 ou superieur requis.")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
 # Chemins
 # ---------------------------------------------------------------------------
-INSTALL_DIR  = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "PDFHeaderTool"
+def _get_local_appdata_dir():
+    # LOCALAPPDATA peut etre virtualise avec Python Store.
+    # USERPROFILE\AppData\Local reste le chemin canonique attendu.
+    user_profile = Path(os.environ.get("USERPROFILE", ""))
+    if str(user_profile):
+        canonical = user_profile / "AppData" / "Local"
+        if canonical.exists():
+            return canonical
+    return Path(os.environ.get("LOCALAPPDATA", Path.home()))
+
+
+def _get_install_dir():
+    base = _get_local_appdata_dir()
+    return base / "PDFHeaderTool"
+
+
+def _resolve_venv_python(install_dir):
+    requested = install_dir / ".venv" / "Scripts" / "python.exe"
+    cfg = requested.parent.parent / "pyvenv.cfg"
+    if requested.exists() and cfg.exists():
+        return requested
+    return requested
+
+
+INSTALL_DIR  = _get_install_dir()
 VENV_DIR     = INSTALL_DIR / ".venv"
-VENV_PYTHON  = VENV_DIR / "Scripts" / "python.exe"
+VENV_PYTHON  = _resolve_venv_python(INSTALL_DIR)
 SCRIPT_DIR   = Path(__file__).parent.resolve()
 APP_NAME     = "PDF Header Tool"
 ICON_NAME    = "pdf_header.ico"
+INSTALLER_VERSION = "build-2026.02.21.01"
 
 # ---------------------------------------------------------------------------
 # Utilitaires
 # ---------------------------------------------------------------------------
 def step(msg):
-    print(f"\n  ▶  {msg}")
+    print(f"\n  >  {msg}")
 
 def ok(msg=""):
-    print(f"      ✓  {msg}" if msg else "      ✓  OK")
+    print(f"      [OK] {msg}" if msg else "      [OK] OK")
 
 def fail(msg):
-    print(f"      ✗  ERREUR : {msg}")
-    input("\nAppuyez sur Entrée pour quitter…")
+    print(f"      [ERROR] {msg}")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -53,9 +80,9 @@ def install_files():
             shutil.copy2(src, dst)
             ok(fname)
         else:
-            print(f"      ⚠  {fname} introuvable, ignoré")
+            print(f"      [WARN] {fname} introuvable, ignore")
 
-    # Icône (optionnelle)
+    # Icone (optionnelle)
     icon_src = SCRIPT_DIR / ICON_NAME
     icon_dst = INSTALL_DIR / ICON_NAME
     if icon_src.exists():
@@ -63,37 +90,74 @@ def install_files():
         ok(ICON_NAME)
 
 # ---------------------------------------------------------------------------
-# 2. Créer le venv et installer les dépendances
+# 2. Creer le venv et installer les dependances
 # ---------------------------------------------------------------------------
 def setup_venv():
-    step("Création de l'environnement virtuel")
-    if not VENV_PYTHON.exists():
+    global VENV_PYTHON
+    step("Creation de l'environnement virtuel")
+
+    def _recreate_venv():
+        if VENV_DIR.exists():
+            shutil.rmtree(VENV_DIR, ignore_errors=True)
         import venv
         venv.create(str(VENV_DIR), with_pip=True)
-        ok("Venv créé")
-    else:
-        ok("Venv déjà existant, réutilisation")
+        return _resolve_venv_python(INSTALL_DIR)
 
-    step("Installation des dépendances (pymupdf, Pillow)")
-    pkgs = ["pymupdf", "Pillow"]
+    requested_python = VENV_DIR / "Scripts" / "python.exe"
+    pyvenv_cfg = VENV_DIR / "pyvenv.cfg"
+
+    if not requested_python.exists() or not pyvenv_cfg.exists():
+        VENV_PYTHON = _recreate_venv()
+        ok("Venv cree")
+    else:
+        VENV_PYTHON = _resolve_venv_python(INSTALL_DIR)
+        health = subprocess.run(
+            [str(VENV_PYTHON), "-c", "import sys; print(sys.executable)"],
+            capture_output=True,
+            text=True
+        )
+        if health.returncode != 0:
+            VENV_PYTHON = _recreate_venv()
+            ok("Venv recree (ancien venv invalide)")
+        else:
+            ok("Venv deja existant, reutilisation")
+
+    if not VENV_PYTHON.exists():
+        fail(f"Python du venv introuvable: {VENV_PYTHON}")
+
+    step("Installation des dependances (pymupdf, Pillow, customtkinter)")
+    # Mettre pip a jour augmente fortement la fiabilite sur VM fraiches.
+    try:
+        subprocess.check_call(
+            [str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip", "--disable-pip-version-check"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError:
+        pass
+
+    pkgs = ["pymupdf", "Pillow", "customtkinter"]
     for pkg in pkgs:
-        print(f"      → {pkg}…", end="", flush=True)
-        try:
-            subprocess.check_call(
-                [str(VENV_PYTHON), "-m", "pip", "install", pkg, "--quiet",
-                 "--disable-pip-version-check"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            print(" ✓")
-        except subprocess.CalledProcessError:
-            print(f"\n      ✗  Impossible d'installer {pkg}")
-            fail(f"Vérifiez votre connexion Internet et relancez install.bat")
+        print(f"      -> {pkg}...", end="", flush=True)
+        cmd = [
+            str(VENV_PYTHON), "-m", "pip", "install", pkg,
+            "--disable-pip-version-check", "--prefer-binary"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(" [OK]")
+        else:
+            print(f"\n      [ERROR] Impossible d'installer {pkg}")
+            if result.stderr:
+                print("      pip stderr:")
+                for line in result.stderr.strip().splitlines()[-8:]:
+                    print(f"        {line}")
+            fail("Verifiez la connexion Internet et relancez install.bat")
 
 # ---------------------------------------------------------------------------
-# 3. Créer le lancer.bat dans le dossier d'installation
+# 3. Creer le lancer.bat dans le dossier d'installation
 # ---------------------------------------------------------------------------
 def create_launcher():
-    step("Création du lanceur")
+    step("Creation du lanceur")
     launcher = INSTALL_DIR / "lancer.bat"
     content = f"""@echo off
 "{VENV_PYTHON}" "{INSTALL_DIR / 'pdf_header.py'}" %*
@@ -103,10 +167,10 @@ def create_launcher():
     return launcher
 
 # ---------------------------------------------------------------------------
-# 4. Créer les raccourcis Windows (.lnk) via PowerShell
+# 4. Creer les raccourcis Windows (.lnk) via PowerShell
 # ---------------------------------------------------------------------------
 def _create_shortcut(target_bat, shortcut_path, description):
-    """Crée un raccourci .lnk via PowerShell (pas de dépendance externe)."""
+    """Cree un raccourci .lnk via PowerShell (pas de dependance externe)."""
     icon_path = INSTALL_DIR / ICON_NAME
     icon_line = f'$s.IconLocation = "{icon_path}"' if icon_path.exists() else ""
 
@@ -130,12 +194,12 @@ $s.Save()
         return False
 
 def create_shortcuts(launcher_bat):
-    step("Création des raccourcis")
+    step("Creation des raccourcis")
 
     # Bureau
     desktop = Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop"
     if not desktop.exists():
-        # Chemin localisé via PowerShell
+        # Chemin localise via PowerShell
         try:
             result = subprocess.check_output(
                 ["powershell", "-NoProfile", "-Command",
@@ -151,17 +215,17 @@ def create_shortcuts(launcher_bat):
     if _create_shortcut(str(launcher_bat), str(lnk_desktop), APP_NAME):
         ok(f"Raccourci bureau : {lnk_desktop}")
     else:
-        print("      ⚠  Raccourci bureau non créé (PowerShell indisponible ?)")
+        print("      [WARN] Raccourci bureau non cree (PowerShell indisponible ?)")
 
-    # Menu Démarrer
+    # Menu Demarrer
     start_menu = Path(os.environ.get("APPDATA", "")) / \
                  "Microsoft" / "Windows" / "Start Menu" / "Programs"
     start_menu.mkdir(parents=True, exist_ok=True)
     lnk_start = start_menu / f"{APP_NAME}.lnk"
     if _create_shortcut(str(launcher_bat), str(lnk_start), APP_NAME):
-        ok(f"Menu Démarrer : {lnk_start}")
+        ok(f"Menu Demarrer : {lnk_start}")
     else:
-        print("      ⚠  Raccourci menu Démarrer non créé")
+        print("      [WARN] Raccourci menu Demarrer non cree")
 
 # ---------------------------------------------------------------------------
 # Main
@@ -169,6 +233,7 @@ def create_shortcuts(launcher_bat):
 def main():
     print("=" * 60)
     print(f"  Installation de {APP_NAME}")
+    print(f"  install.py version: {INSTALLER_VERSION}")
     print("=" * 60)
 
     install_files()
@@ -177,11 +242,10 @@ def main():
     create_shortcuts(launcher)
 
     print("\n" + "=" * 60)
-    print(f"  ✓  Installation terminée !")
+    print(f"  [OK] Installation terminee !")
     print(f"     Dossier : {INSTALL_DIR}")
     print(f"     Lancez l'application depuis le raccourci sur le bureau")
     print("=" * 60)
-    input("\nAppuyez sur Entrée pour fermer…")
 
 if __name__ == "__main__":
     main()
