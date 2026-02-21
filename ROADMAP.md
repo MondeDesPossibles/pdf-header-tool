@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.4.0
-# Build   : build-2026.02.21.01
+# Version : 0.4.5
+# Build   : build-2026.02.21.02
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -183,8 +183,8 @@ Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 ---
 
 ## Étape 4.5 — Centralisation des constantes et valeurs en dur
-**Statut : À faire — dépend de l'Étape 4**
-**Version cible : 0.4.5**
+**Statut : Terminé ✓**
+**Version livrée : 0.4.5**
 
 Objectif : améliorer la lisibilité et la maintenabilité de `pdf_header.py` sans changer
 le comportement ni la structure des fichiers. Zéro risque de régression.

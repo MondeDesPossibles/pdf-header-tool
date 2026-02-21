@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
-# Version : 0.4.0
-# Build   : build-2026.02.21.01
+# Version : 0.4.5
+# Build   : build-2026.02.21.02
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -74,7 +74,10 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 - Constante `VERSION` en tête du script + `GITHUB_REPO`
 - Mise à jour silencieuse : télécharge le nouveau `pdf_header.py` et remplace le fichier courant
 
-### Constantes et fonctions module-level (v0.4.0)
+### Constantes et fonctions module-level (v0.4.5)
+- `COLORS` : dict de toutes les couleurs hex de l'UI (arrière-plans, texte, accents, états cartes, overlay)
+- `SIZES` : dict de toutes les dimensions, espacements et constantes numériques de l'UI (fenêtre, panneaux, canvas, overlay, limites config)
+- `TIMINGS` : dict des délais réseau (`update_version_timeout`, `update_download_timeout`)
 - `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
 - `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
 - `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
