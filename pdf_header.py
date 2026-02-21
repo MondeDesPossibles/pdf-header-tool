@@ -1675,7 +1675,7 @@ class PDFHeaderApp:
                                      dashes=dashes)
 
                 # Rect d'insertion du texte — centré horizontalement sur x_pt
-                lineheight = font_size * line_spacing
+                lineheight = line_spacing  # facteur multiplicateur de fontsize (ex: 1.2 → 1.2×12=14.4 pts)
                 half_w = max(pg_w / 2, text_width / 2 + 10)
                 text_rect = fitz.Rect(
                     max(0, x_pt - half_w),
