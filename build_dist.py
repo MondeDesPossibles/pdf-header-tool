@@ -10,34 +10,34 @@
 """
 Script de build pour la distribution Windows portable (bundle complet).
 
-Étapes :
-  1. Télécharger Python Embeddable Package (amd64) depuis python.org
-  2. Source Tcl/Tk (deux modes, par priorité) :
-     a. Dossier local tcltk/  — si présent, utilisé en priorité (recommandé)
-     b. Python NuGet package  — téléchargé automatiquement si tcltk/ absent
+etapes :
+  1. Telecharger Python Embeddable Package (amd64) depuis python.org
+  2. Source Tcl/Tk (deux modes, par priorite) :
+     a. Dossier local tcltk/  — si present, utilise en priorite (recommande)
+     b. Python NuGet package  — telecharge automatiquement si tcltk/ absent
   3. Extraire Python Embedded dans dist/PDFHeaderTool-vX.Y.Z/python/
   4. Copier les DLLs Tcl/Tk + scripts → python/
-  5. Patcher python3XX._pth : décommenter "import site" + ajouter "../site-packages"
-  6. Installer les dépendances (pymupdf, pillow, customtkinter) dans site-packages/
+  5. Patcher python3XX._pth : decommenter "import site" + ajouter "../site-packages"
+  6. Installer les dependances (pymupdf, pillow, customtkinter) dans site-packages/
      via pip cross-compilation Windows (fonctionne depuis Linux)
   7. Copier les fichiers du projet (pdf_header.py, version.txt, lancer.bat)
-  8. Créer dist/PDFHeaderTool-vX.Y.Z.zip
+  8. Creer dist/PDFHeaderTool-vX.Y.Z.zip
 
-Prérequis :
-  - pip installé sur la machine de build (pip3)
-  - Connexion internet si tcltk/ absent (télécharge Python Embedded, NuGet, wheels)
-  - OU dossier tcltk/ présent (pour Tcl/Tk sans internet)
+Prerequis :
+  - pip installe sur la machine de build (pip3)
+  - Connexion internet si tcltk/ absent (telecharge Python Embedded, NuGet, wheels)
+  - OU dossier tcltk/ present (pour Tcl/Tk sans internet)
 
-Dossier tcltk/ (source locale recommandée) :
+Dossier tcltk/ (source locale recommandee) :
   Copier depuis une installation Python 3.11.x Windows (64-bit) :
     tcltk/tcl86t.dll      ← Python311/tcl86t.dll
     tcltk/tk86t.dll       ← Python311/tk86t.dll
     tcltk/tcl/            ← Python311/tcl/  (contient tcl8.6/ et tk8.6/)
-  Ajouter tcltk/ au .gitignore (binaires lourds, non versionnés).
+  Ajouter tcltk/ au .gitignore (binaires lourds, non versionnes).
 
-Résultat :
+Resultat :
   - Zip entièrement auto-contenu : aucun internet requis sur la machine utilisateur
-  - Déziper + double-clic lancer.bat = l'app se lance directement
+  - Deziper + double-clic lancer.bat = l'app se lance directement
 """
 
 import argparse
@@ -52,7 +52,7 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 DEFAULT_PYTHON_VERSION = "3.11.9"
-BUILD_ID               = "build-2026.02.21.07"   # incrémenter à chaque build
+BUILD_ID               = "build-2026.02.21.07"   # incrementer à chaque build
 
 PYTHON_EMBED_URL_TEMPLATE = (
     "https://www.python.org/ftp/python/{ver}/python-{ver}-embed-amd64.zip"
@@ -74,7 +74,7 @@ TCLK_DIRS = [
 
 SCRIPT_DIR     = Path(__file__).parent
 DIST_BASE      = SCRIPT_DIR / "dist"
-TCLTK_LOCAL    = SCRIPT_DIR / "tcltk"   # dossier local (non versionné, voir .gitignore)
+TCLTK_LOCAL    = SCRIPT_DIR / "tcltk"   # dossier local (non versionne, voir .gitignore)
 
 # Fichiers du projet à copier dans la distribution
 PROJECT_FILES = [
@@ -96,7 +96,7 @@ def _find_pip() -> list:
     Essaie dans l'ordre :
       1. python3 -m pip  (pip dans le module Python courant)
       2. pip3            (commande système)
-      3. pip             (commande système générique)
+      3. pip             (commande système generique)
     """
     for candidate in [
         [sys.executable, "-m", "pip"],
@@ -114,8 +114,8 @@ def _find_pip() -> list:
 
 
 def _download(url: str, dest: Path) -> None:
-    """Télécharge url vers dest avec barre de progression."""
-    print(f"  Téléchargement : {url}")
+    """Telecharge url vers dest avec barre de progression."""
+    print(f"  Telechargement : {url}")
 
     def _reporthook(count, block_size, total_size):
         if total_size > 0:
@@ -131,7 +131,7 @@ def _patch_pth(python_dir: Path) -> None:
     """Patche python3XX._pth pour activer site et ../site-packages."""
     pth_files = sorted(python_dir.glob("python3*._pth"))
     if not pth_files:
-        print("  AVERTISSEMENT : aucun fichier ._pth trouvé dans python/", file=sys.stderr)
+        print("  AVERTISSEMENT : aucun fichier ._pth trouve dans python/", file=sys.stderr)
         return
 
     pth_file = pth_files[0]
@@ -139,14 +139,14 @@ def _patch_pth(python_dir: Path) -> None:
 
     if "#import site" in content:
         content = content.replace("#import site", "import site")
-        _log(f"Patché : '#import site' → 'import site' dans {pth_file.name}")
+        _log(f"Patche : '#import site' → 'import site' dans {pth_file.name}")
     elif "import site" not in content:
         content += "\nimport site\n"
-        _log(f"Ajouté : 'import site' dans {pth_file.name}")
+        _log(f"Ajoute : 'import site' dans {pth_file.name}")
 
     if "../site-packages" not in content:
         content += "../site-packages\n"
-        _log(f"Ajouté : '../site-packages' dans {pth_file.name}")
+        _log(f"Ajoute : '../site-packages' dans {pth_file.name}")
 
     pth_file.write_text(content, encoding="utf-8")
 
@@ -163,9 +163,9 @@ def _copy_tcltk_local(tcltk_dir: Path, python_dir: Path) -> None:
 
     Notes :
       - _tkinter.pyd et tkinter/ sont ABSENTS du Python Embedded officiel
-      - Les deux doivent être copiés depuis une installation Windows standard
+      - Les deux doivent être copies depuis une installation Windows standard
       - tkinter/ va dans python/ car '.' est dans sys.path (via ._pth)
-      - tcl/ doit être copié EN ENTIER : _tkinter.pyd cherche TK_LIBRARY dans
+      - tcl/ doit être copie EN ENTIER : _tkinter.pyd cherche TK_LIBRARY dans
         python/tcl/tk8.6/ (structure du full install Windows, pas du NuGet)
     """
     _log(f"Copie Tcl/Tk depuis le dossier local : {tcltk_dir.name}/")
@@ -181,16 +181,16 @@ def _copy_tcltk_local(tcltk_dir: Path, python_dir: Path) -> None:
                 )
             continue
         shutil.copy2(src, python_dir / dll)
-        _log(f"  Copié : {dll} ({src.stat().st_size // 1024} Ko)")
+        _log(f"  Copie : {dll} ({src.stat().st_size // 1024} Ko)")
 
     # module Python tkinter : tcltk/tkinter/ → python/tkinter/
-    # (absent de python311.zip dans l'Embedded — doit être fourni séparément)
+    # (absent de python311.zip dans l'Embedded — doit être fourni separement)
     tkinter_src = tcltk_dir / "tkinter"
     tkinter_dst = python_dir / "tkinter"
     if tkinter_src.exists():
         shutil.copytree(tkinter_src, tkinter_dst)
         count = sum(1 for f in tkinter_dst.rglob("*") if f.is_file())
-        _log(f"  Copié : tkinter/ ({count} fichiers)")
+        _log(f"  Copie : tkinter/ ({count} fichiers)")
     else:
         print(f"  AVERTISSEMENT : tkinter/ introuvable dans {tcltk_dir}", file=sys.stderr)
         print("    → Copiez Lib\\tkinter\\ depuis votre install Python Windows", file=sys.stderr)
@@ -203,7 +203,7 @@ def _copy_tcltk_local(tcltk_dir: Path, python_dir: Path) -> None:
     if tcl_src.exists():
         shutil.copytree(tcl_src, tcl_dst)
         count = sum(1 for f in tcl_dst.rglob("*") if f.is_file())
-        _log(f"  Copié : tcl/ complet ({count} fichiers) → python/tcl/")
+        _log(f"  Copie : tcl/ complet ({count} fichiers) → python/tcl/")
     else:
         print(f"  AVERTISSEMENT : tcl/ introuvable dans {tcltk_dir}", file=sys.stderr)
 
@@ -223,9 +223,9 @@ def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
                 data = zf.read(member)
                 dest = python_dir / Path(tcl_path).name
                 dest.write_bytes(data)
-                _log(f"  Copié : {Path(tcl_path).name} ({len(data) // 1024} Ko)")
+                _log(f"  Copie : {Path(tcl_path).name} ({len(data) // 1024} Ko)")
             else:
-                print(f"  AVERTISSEMENT : {tcl_path} non trouvé dans le NuGet", file=sys.stderr)
+                print(f"  AVERTISSEMENT : {tcl_path} non trouve dans le NuGet", file=sys.stderr)
 
         # Copier les dossiers tcl/ et tk/
         for tcl_dir in TCLK_DIRS:
@@ -233,10 +233,10 @@ def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
             prefix_candidates = [p for p in names if p.startswith(tcl_dir + "/")
                                   or p.lower().startswith("tools/" + dir_name + "/")]
             if not prefix_candidates:
-                print(f"  AVERTISSEMENT : dossier {tcl_dir}/ non trouvé dans le NuGet", file=sys.stderr)
+                print(f"  AVERTISSEMENT : dossier {tcl_dir}/ non trouve dans le NuGet", file=sys.stderr)
                 continue
 
-            # Déterminer le préfixe réel dans le zip
+            # Determiner le prefixe reel dans le zip
             prefix = prefix_candidates[0].split(dir_name + "/")[0] + dir_name + "/"
             count = 0
             for member in names:
@@ -246,7 +246,7 @@ def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(member))
                     count += 1
-            _log(f"  Copié : {dir_name}/ ({count} fichiers)")
+            _log(f"  Copie : {dir_name}/ ({count} fichiers)")
 
 
 # ---------------------------------------------------------------------------
@@ -273,24 +273,24 @@ def build(python_version: str) -> None:
 
     DIST_BASE.mkdir(parents=True, exist_ok=True)
 
-    # 1. Nettoyage / création du dossier de distribution
+    # 1. Nettoyage / creation du dossier de distribution
     if dist_dir.exists():
         _log(f"Suppression dossier existant : {dist_dir.name}/")
         shutil.rmtree(dist_dir)
     dist_dir.mkdir(parents=True)
 
-    # 2. Téléchargement Python Embedded (cache local dans dist/)
+    # 2. Telechargement Python Embedded (cache local dans dist/)
     embed_url      = PYTHON_EMBED_URL_TEMPLATE.format(ver=python_version)
     embed_zip_name = f"python-{python_version}-embed-amd64.zip"
     embed_zip_path = DIST_BASE / embed_zip_name
 
     if embed_zip_path.exists():
-        _log(f"Python Embedded déjà en cache : {embed_zip_name}")
+        _log(f"Python Embedded dejà en cache : {embed_zip_name}")
     else:
         _download(embed_url, embed_zip_path)
-        _log(f"Terminé : {embed_zip_name} ({embed_zip_path.stat().st_size // 1024} Ko)")
+        _log(f"Termine : {embed_zip_name} ({embed_zip_path.stat().st_size // 1024} Ko)")
 
-    # 3. Source Tcl/Tk : dossier local tcltk/ en priorité, NuGet en fallback
+    # 3. Source Tcl/Tk : dossier local tcltk/ en priorite, NuGet en fallback
     use_local_tcltk = TCLTK_LOCAL.exists() and (TCLTK_LOCAL / "tcl86t.dll").exists()
 
     nuget_zip_path = None
@@ -300,20 +300,20 @@ def build(python_version: str) -> None:
         nuget_zip_path = DIST_BASE / nuget_zip_name
 
         if nuget_zip_path.exists():
-            _log(f"Python NuGet déjà en cache : {nuget_zip_name}")
+            _log(f"Python NuGet dejà en cache : {nuget_zip_name}")
         else:
-            _log("Dossier tcltk/ absent — téléchargement NuGet (fallback)...")
+            _log("Dossier tcltk/ absent — telechargement NuGet (fallback)...")
             _download(nuget_url, nuget_zip_path)
-            _log(f"Terminé : {nuget_zip_name} ({nuget_zip_path.stat().st_size // 1024} Ko)")
+            _log(f"Termine : {nuget_zip_name} ({nuget_zip_path.stat().st_size // 1024} Ko)")
     else:
-        _log(f"Dossier tcltk/ détecté — NuGet ignoré")
+        _log(f"Dossier tcltk/ detecte — NuGet ignore")
 
     # 4. Extraction Python Embedded → python/
     python_dir = dist_dir / "python"
     _log("Extraction Python Embedded dans python/...")
     with zipfile.ZipFile(embed_zip_path, "r") as zf:
         zf.extractall(python_dir)
-    _log(f"Extraction terminée ({len(list(python_dir.iterdir()))} fichiers)")
+    _log(f"Extraction terminee ({len(list(python_dir.iterdir()))} fichiers)")
 
     # 5. Copie DLLs + scripts Tcl/Tk → python/
     if use_local_tcltk:
@@ -324,13 +324,13 @@ def build(python_version: str) -> None:
     # 6. Patch python3XX._pth
     _patch_pth(python_dir)
 
-    # 7. Création du dossier site-packages
+    # 7. Creation du dossier site-packages
     site_pkg_dir = dist_dir / "site-packages"
     site_pkg_dir.mkdir()
-    _log("Dossier site-packages/ créé")
+    _log("Dossier site-packages/ cree")
 
-    # 8. Installation des dépendances Windows dans site-packages/ (cross-compilation)
-    _log("Installation des dépendances Windows (cross-compilation depuis Linux)...")
+    # 8. Installation des dependances Windows dans site-packages/ (cross-compilation)
+    _log("Installation des dependances Windows (cross-compilation depuis Linux)...")
     pip_cmd = _find_pip() + [
         "install",
         "--platform", "win_amd64",
@@ -345,7 +345,7 @@ def build(python_version: str) -> None:
     if result.returncode != 0:
         print(f"\n  ERREUR pip install :\n{result.stderr}", file=sys.stderr)
         sys.exit(1)
-    _log(f"Dépendances installées dans site-packages/ ({sum(1 for _ in site_pkg_dir.rglob('*') if _.is_file())} fichiers)")
+    _log(f"Dependances installees dans site-packages/ ({sum(1 for _ in site_pkg_dir.rglob('*') if _.is_file())} fichiers)")
 
     # 9. Copie des fichiers du projet
     missing = []
@@ -353,17 +353,17 @@ def build(python_version: str) -> None:
         src = SCRIPT_DIR / fname
         if src.exists():
             shutil.copy2(src, dist_dir / fname)
-            _log(f"Copié : {fname}")
+            _log(f"Copie : {fname}")
         else:
             missing.append(fname)
-            print(f"  AVERTISSEMENT : {fname} introuvable — ignoré", file=sys.stderr)
+            print(f"  AVERTISSEMENT : {fname} introuvable — ignore", file=sys.stderr)
 
     if missing:
         print(f"\n  Fichiers manquants : {', '.join(missing)}", file=sys.stderr)
         print("  La distribution peut être incomplète.\n", file=sys.stderr)
 
-    # 10. Création du zip final
-    _log(f"Création du zip : {zip_path.name}...")
+    # 10. Creation du zip final
+    _log(f"Creation du zip : {zip_path.name}...")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for file in sorted(dist_dir.rglob("*")):
             if file.is_file():
@@ -371,18 +371,18 @@ def build(python_version: str) -> None:
                 zf.write(file, arcname)
 
     zip_size_mb = zip_path.stat().st_size / 1024 / 1024
-    _log(f"Zip créé : {zip_path.name} ({zip_size_mb:.1f} Mo)")
+    _log(f"Zip cree : {zip_path.name} ({zip_size_mb:.1f} Mo)")
 
     print(f"\n{'=' * 60}")
     print(f"  Distribution prête  : {zip_path}")
     print(f"  Taille              : {zip_size_mb:.1f} Mo")
     print(f"  Contenu             : Python {python_version} + Tcl/Tk + pymupdf + Pillow + customtkinter")
-    print(f"  Utilisation         : déziper + double-clic lancer.bat")
+    print(f"  Utilisation         : deziper + double-clic lancer.bat")
     print(f"{'=' * 60}\n")
 
 
 # ---------------------------------------------------------------------------
-# Point d'entrée
+# Point d'entree
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -391,7 +391,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--python-version",
         default=DEFAULT_PYTHON_VERSION,
-        help=f"Version Python Embedded à utiliser (défaut : {DEFAULT_PYTHON_VERSION})",
+        help=f"Version Python Embedded à utiliser (defaut : {DEFAULT_PYTHON_VERSION})",
     )
     args = parser.parse_args()
     build(args.python_version)
