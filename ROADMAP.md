@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.4.5
-# Build   : build-2026.02.21.02
+# Version : 0.4.6
+# Build   : build-2026.02.21.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -207,8 +207,8 @@ le comportement ni la structure des fichiers. Zéro risque de régression.
 ---
 
 ## Étape 4.6 — Distribution Python Embarqué (Windows, zero-install)
-**Statut : À faire — dépend de l'Étape 4.5**
-**Version cible : 0.4.6**
+**Statut : Terminé ✓**
+**Version livrée : 0.4.6**
 
 Passer d'un modèle "installer Python sur le système" à un modèle "portable" :
 l'utilisateur dézipe et double-clique. Aucun Python système requis sur Windows.

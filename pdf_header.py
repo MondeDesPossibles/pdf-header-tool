@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
-# Version : 0.4.5
-# Build   : build-2026.02.21.02
+# Version : 0.4.6
+# Build   : build-2026.02.21.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.4.5"
-BUILD_ID    = "build-2026.02.21.02"
+VERSION     = "0.4.6"
+BUILD_ID    = "build-2026.02.21.03"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -21,45 +21,31 @@ import urllib.error
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Bootstrap : venv + dépendances
+# Bootstrap : modèle portable (Étape 4.6+)
 # ---------------------------------------------------------------------------
 def _get_install_dir():
-    if sys.platform == "win32":
-        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "PDFHeaderTool"
+    """Retourne le dossier de l'application.
+    Modèle portable : toujours le dossier du script (Windows et Linux).
+    La config, les logs et les polices temporaires sont stockés ici.
+    """
     return Path(__file__).parent
 
 def _bootstrap():
-    install_dir = _get_install_dir()
-    venv_dir    = install_dir / ".venv"
-    if sys.platform == "win32":
-        venv_python = venv_dir / "Scripts" / "python.exe"
-    else:
-        venv_python = venv_dir / "bin" / "python"
-
-    if Path(sys.executable).resolve() == venv_python.resolve():
-        return
-
-    if not venv_python.exists():
-        import venv as _venv
-        print("Création de l'environnement virtuel…")
-        _venv.create(str(venv_dir), with_pip=True)
-
-    import subprocess
-    pkgs = ["pymupdf", "Pillow", "customtkinter"]
-    for pkg in pkgs:
-        try:
-            dist_name = {"pymupdf": "fitz", "Pillow": "PIL", "customtkinter": "customtkinter"}.get(pkg, pkg.lower())
-            subprocess.check_call(
-                [str(venv_python), "-c", f"import {dist_name}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-        except subprocess.CalledProcessError:
-            print(f"Installation de {pkg}…")
-            subprocess.check_call(
-                [str(venv_python), "-m", "pip", "install", pkg, "--quiet"],
-            )
-
-    os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+    """Vérifie que les dépendances sont disponibles.
+    Sur Windows : installées dans site-packages/ par setup.bat (lancer.bat).
+    Sur Linux   : installées manuellement via pip install pymupdf Pillow customtkinter
+    """
+    try:
+        import fitz          # noqa: F401
+        import customtkinter # noqa: F401
+        from PIL import Image # noqa: F401
+    except ImportError as e:
+        print(f"Dépendance manquante : {e}")
+        if sys.platform == "win32":
+            print("Lancez lancer.bat pour installer les dépendances automatiquement.")
+        else:
+            print("Installez les dépendances : pip install pymupdf Pillow customtkinter")
+        sys.exit(1)
 
 _bootstrap()
 

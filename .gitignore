@@ -1,3 +1,9 @@
+# PDF Header Tool — fichiers locaux non versionnés
+# get-pip.py : ~2MB, télécharger depuis https://bootstrap.pypa.io/get-pip.py
+get-pip.py
+# Cache Python Embeddable (téléchargé par build_dist.py)
+dist/python-*.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

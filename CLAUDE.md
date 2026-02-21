@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
-# Version : 0.4.5
-# Build   : build-2026.02.21.02
+# Version : 0.4.6
+# Build   : build-2026.02.21.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -17,20 +17,38 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 
 ## Architecture
 
-### Actuelle (v0.4.x — fichier unique)
+### Actuelle (v0.4.6 — fichier unique + distribution portable)
 
 ```
-pdf-header-tool/
-├── pdf_header.py     # Script principal — toute la logique est ici
-├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : vérifie Python, ouvre python.org si absent/Store, lance install.py
-├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
-├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
-├── CLAUDE.md         # Ce fichier
-└── README.md         # Documentation utilisateur
+pdf-header-tool/          # repo git
+├── pdf_header.py         # Script principal — toute la logique est ici
+├── install.py            # Installateur Windows legacy (non utilisé en v0.4.6+)
+├── install.bat           # Wrapper bat legacy (non utilisé en v0.4.6+)
+├── lancer.bat            # Point d'entrée Windows portable (double-clic)
+├── setup.bat             # Installation dépendances au premier lancement
+├── build_dist.py         # Script de build distribution (dev-only)
+├── get-pip.py            # Bundlé localement — NON commité (voir .gitignore)
+├── version.txt           # Numéro de version — lu par le système de MAJ
+├── ROADMAP.md            # Évolutions prévues, à lire avant toute modification
+├── CLAUDE.md             # Ce fichier
+└── README.md             # Documentation utilisateur
 ```
 
-### Cible (à partir de v0.4.6 / v0.4.7 — distribution portable + package)
+Distribution Windows générée par `build_dist.py` :
+
+```
+PDFHeaderTool/            # dossier de distribution (zippé pour livraison)
+├── python/               # Python Embeddable 3.11.x (python311._pth patché)
+├── site-packages/        # dépendances pip (pymupdf, pillow, customtkinter)
+│                         # installées par setup.bat au premier lancement
+├── pdf_header.py         # script principal (copie)
+├── version.txt
+├── lancer.bat            # double-clic pour lancer
+├── setup.bat             # installation dépendances (appelé par lancer.bat)
+└── get-pip.py            # bundlé dans la distribution
+```
+
+### Cible (à partir de v0.4.7 — distribution portable + package)
 
 Distribution portable Windows — aucun Python système requis :
 
@@ -64,9 +82,9 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 
 ## pdf_header.py — Structure interne
 
-### Bootstrap (lignes ~20-60)
-- `_get_install_dir()` : retourne `%LOCALAPPDATA%/PDFHeaderTool` sur Windows, dossier du script sur Linux
-- `_bootstrap()` : crée le venv dans `install_dir/.venv/`, installe les dépendances, se relance dans le venv
+### Bootstrap (lignes ~20-50)
+- `_get_install_dir()` : retourne `Path(__file__).parent` (portable, identique Windows et Linux depuis v0.4.6)
+- `_bootstrap()` : vérifie que fitz, customtkinter et PIL sont importables — affiche un message d'erreur et quitte si une dépendance est manquante (plus de création de venv depuis v0.4.6)
 
 ### Mise à jour automatique (lignes ~80-110)
 - `check_update()` : thread daemon qui compare `version.txt` local vs GitHub raw
@@ -196,51 +214,48 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 
 ## Distribution et lancement
 
-### Modèle actuel (v0.4.x) — install.bat + venv système
+### Modèle actuel (v0.4.6+) — Python Embarqué portable
 
-**Fonctionnement général :**
-1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
-2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
-3. Vérifie Python simplement avec `python --version`
-4. Si Python absent : ouvre `https://www.python.org/downloads/` et demande une installation manuelle
-5. Si Python Microsoft Store détecté : stoppe l'installation et redirige aussi vers `python.org`
-6. Lance `install.py` une fois un Python standard détecté
-7. Ferme automatiquement en cas de succès (pause uniquement en cas d'erreur)
+L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Aucun Python système requis.
 
-**Points d'attention pour toute modification de install.bat :**
-- Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
-- Toujours logger avant ET après chaque opération critique
-- La variable `PYTHON_CMD` doit être définie avant `:run_installer`
-- Cible d'installation actuelle : `%LOCALAPPDATA%\\PDFHeaderTool`
-
-### Modèle cible (à partir de l'Étape 4.6) — Python Embarqué portable
-
-L'objectif est de supprimer toute dépendance à un Python système sur Windows.
-L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Rien d'autre.
-
-**`lancer.bat` — nouveau rôle :**
+**`lancer.bat` — point d'entrée utilisateur :**
 1. Active UTF-8 (`chcp 65001`)
-2. Vérifie la présence de `python\python.exe`
+2. Vérifie la présence de `python\python.exe` (sanity check)
 3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` et attend
 4. Lance `python\python.exe pdf_header.py`
 5. Log dans `pdf_header_launch.log`
 
-**`setup.bat` — installation premier lancement (remplace install.bat + install.py) :**
-1. Installe pip via `get-pip.py` bundlé (pas de téléchargement)
-2. Installe les dépendances dans `site-packages\` via pip `--target`
+**`setup.bat` — installation des dépendances (1er lancement) :**
+1. Installe pip via `get-pip.py` bundlé : `python\python.exe get-pip.py --no-warn-script-location`
+2. Installe les dépendances dans `site-packages\` : `python\python.exe -m pip install --target=site-packages pymupdf pillow customtkinter`
 3. Log complet dans `pdf_header_install.log`
+4. Connexion internet requise au premier lancement
 
-**`_get_install_dir()` cible :**
-- Retourne `Path(__file__).parent` dans tous les cas (portable, plus de `%LOCALAPPDATA%`)
+**`build_dist.py` — script de build (dev-only) :**
+- Télécharge Python Embeddable 3.11.x depuis python.org (cache local dans `dist/`)
+- Patche `python3XX._pth` : décommente `import site` + ajoute `../site-packages`
+- Copie les fichiers du projet (pdf_header.py, lancer.bat, setup.bat, get-pip.py, version.txt)
+- Crée `dist/PDFHeaderTool-vX.Y.Z.zip`
+- Usage : `python3 build_dist.py [--python-version 3.11.9]`
 
-**`_bootstrap()` cible :**
-- Devient un no-op (supprimé ou réduit à un `try: import fitz` de vérification)
+**`_get_install_dir()` :**
+- Retourne `Path(__file__).parent` dans tous les cas (Windows et Linux — portable USB/réseau)
 
-**Points d'attention pour toute modification (modèle cible) :**
-- Ne jamais utiliser de caractères Unicode dans les `echo`
+**`_bootstrap()` :**
+- Vérifie que fitz, customtkinter, PIL sont importables — affiche un message d'erreur clair et quitte si absent
+- Sur Windows : les dépendances sont dans `site-packages/` (installées par setup.bat)
+- Sur Linux : dépendances installées manuellement via `pip install pymupdf Pillow customtkinter`
+
+**Points d'attention pour toute modification des .bat :**
+- Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
 - Toujours logger avant ET après chaque opération critique
 - `python\python311._pth` doit avoir `import site` décommenté et `../site-packages` présent
 - Tester sur machine sans Python ET sur machine avec Python ancien ou Store
+
+### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
+
+Les fichiers `install.bat` et `install.py` sont conservés dans le repo pour référence
+mais ne sont plus utilisés à partir de v0.4.6.
 
 ---
 
