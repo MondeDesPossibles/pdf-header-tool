@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
 # Version : 0.4.0
-# Build   : build-2026.02.20.22
+# Build   : build-2026.02.21.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
 VERSION     = "0.4.0"
-BUILD_ID    = "build-2026.02.20.22"
+BUILD_ID    = "build-2026.02.21.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys
@@ -271,6 +271,24 @@ DATE_FORMATS = [
     ("%d %b %Y",       "ex: 20 fév. 2026"),
     ("%A %d %B %Y",    "ex: vendredi 20 février 2026"),
 ]
+
+# Libellés UI pour les sources de date (interne → affiché)
+DATE_SOURCE_DISPLAY = {
+    "today":      "Date du jour",
+    "file_mtime": "Date de création fichier",
+}
+DATE_SOURCE_INTERNAL = {v: k for k, v in DATE_SOURCE_DISPLAY.items()}
+
+# Fonctionnalités masquées dans l'UI pour la v0.4.x (logique conservée)
+_HIDDEN_UI_FEATURES = {
+    "letter_spacing",
+    "line_spacing",
+    "position_grid",
+    "margins",
+    "rotation",
+    "frame",
+    "background",
+}
 
 def _get_font_dirs() -> list:
     """Retourne les dossiers de polices système selon la plateforme."""
@@ -608,8 +626,9 @@ class PDFHeaderApp:
         row_ds.pack(fill="x", padx=10, pady=2)
         ctk.CTkLabel(row_ds, text="Source", fg_color="transparent", text_color="#aaaaaa",
                      font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
-        self.var_date_source = tk.StringVar(value=cfg.get("date_source", "today"))
-        opt_ds = ctk.CTkOptionMenu(row_ds, values=["today", "file_mtime"],
+        _ds_display = DATE_SOURCE_DISPLAY.get(cfg.get("date_source", "today"), "Date du jour")
+        self.var_date_source = tk.StringVar(value=_ds_display)
+        opt_ds = ctk.CTkOptionMenu(row_ds, values=list(DATE_SOURCE_DISPLAY.values()),
                                    variable=self.var_date_source,
                                    fg_color="#2a2a35", button_color="#3a3a4a",
                                    button_hover_color="#4a4a5a", text_color="#dddddd",
@@ -720,86 +739,84 @@ class PDFHeaderApp:
             btn_style.pack(side="left", padx=3)
             self._sidebar_interactive.append(btn_style)
 
-        # Espacement lettres
-        row_lsp = ctk.CTkFrame(parent, fg_color="transparent")
-        row_lsp.pack(fill="x", padx=14, pady=2)
-        ctk.CTkLabel(row_lsp, text="Esp. lettres", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
+        # Espacement lettres et lignes — variables toujours créées (utilisées dans _apply)
         self.var_letter_spacing = tk.StringVar(value=str(cfg.get("letter_spacing", 0.0)))
-        entry_lsp = ctk.CTkEntry(row_lsp, textvariable=self.var_letter_spacing,
-                                 width=55, fg_color="#2a2a35", text_color="#dddddd",
-                                 border_color="#3a3a4a", font=("Courier New", 11))
-        entry_lsp.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_lsp)
-        ctk.CTkLabel(row_lsp, text="pts", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
-
-        # Espacement lignes
-        row_line = ctk.CTkFrame(parent, fg_color="transparent")
-        row_line.pack(fill="x", padx=14, pady=2)
-        ctk.CTkLabel(row_line, text="Esp. lignes", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
-        self.var_line_spacing = tk.StringVar(value=str(cfg.get("line_spacing", 1.2)))
-        entry_line = ctk.CTkEntry(row_line, textvariable=self.var_line_spacing,
-                                  width=55, fg_color="#2a2a35", text_color="#dddddd",
-                                  border_color="#3a3a4a", font=("Courier New", 11))
-        entry_line.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_line)
-        ctk.CTkLabel(row_line, text="×", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
+        self.var_line_spacing   = tk.StringVar(value=str(cfg.get("line_spacing", 1.2)))
+        if "letter_spacing" not in _HIDDEN_UI_FEATURES:
+            row_lsp = ctk.CTkFrame(parent, fg_color="transparent")
+            row_lsp.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row_lsp, text="Esp. lettres", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
+            entry_lsp = ctk.CTkEntry(row_lsp, textvariable=self.var_letter_spacing,
+                                     width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                     border_color="#3a3a4a", font=("Courier New", 11))
+            entry_lsp.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_lsp)
+            ctk.CTkLabel(row_lsp, text="pts", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
+        if "line_spacing" not in _HIDDEN_UI_FEATURES:
+            row_line = ctk.CTkFrame(parent, fg_color="transparent")
+            row_line.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row_line, text="Esp. lignes", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=80, anchor="w").pack(side="left")
+            entry_line = ctk.CTkEntry(row_line, textvariable=self.var_line_spacing,
+                                      width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                      border_color="#3a3a4a", font=("Courier New", 11))
+            entry_line.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_line)
+            ctk.CTkLabel(row_line, text="×", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
 
         # ═══════════════════════════════════════════════════════════════
         # POSITION
         # ═══════════════════════════════════════════════════════════════
         self._section(parent, "POSITION")
 
-        ctk.CTkLabel(parent, text="Preset",
-                     fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), anchor="w").pack(anchor="w", padx=14, pady=(6, 2))
-
-        grid_frame = ctk.CTkFrame(parent, fg_color="#1a1a22", corner_radius=6)
-        grid_frame.pack(padx=20, pady=(0, 6), anchor="w")
+        # Grille preset et marges — variables toujours créées (utilisées dans _recalc_ratio_from_preset)
         self._preset_buttons = {}
-        for key, (row_n, col_n) in POSITION_PRESETS.items():
-            btn_preset = ctk.CTkButton(grid_frame, text=PRESET_LABELS[key],
-                                       width=44, height=32,
-                                       fg_color="#2a2a35", hover_color="#3a4a6a",
-                                       text_color="#dddddd", font=("Segoe UI", 14),
-                                       corner_radius=4,
-                                       command=lambda k=key: self._on_preset_click(k))
-            btn_preset.grid(row=row_n, column=col_n, padx=2, pady=2)
-            self._preset_buttons[key] = btn_preset
-            self._sidebar_interactive.append(btn_preset)
-
-        # Marges X / Y
-        row_mx = ctk.CTkFrame(parent, fg_color="transparent")
-        row_mx.pack(fill="x", padx=14, pady=2)
-        ctk.CTkLabel(row_mx, text="Marge X", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
         self.var_margin_x = tk.StringVar(value=str(cfg.get("margin_x_pt", 20.0)))
-        entry_mx = ctk.CTkEntry(row_mx, textvariable=self.var_margin_x,
-                                width=55, fg_color="#2a2a35", text_color="#dddddd",
-                                border_color="#3a3a4a", font=("Courier New", 11))
-        entry_mx.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_mx)
-        ctk.CTkLabel(row_mx, text="pts", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
-
-        row_my = ctk.CTkFrame(parent, fg_color="transparent")
-        row_my.pack(fill="x", padx=14, pady=2)
-        ctk.CTkLabel(row_my, text="Marge Y", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
         self.var_margin_y = tk.StringVar(value=str(cfg.get("margin_y_pt", 20.0)))
-        entry_my = ctk.CTkEntry(row_my, textvariable=self.var_margin_y,
-                                width=55, fg_color="#2a2a35", text_color="#dddddd",
-                                border_color="#3a3a4a", font=("Courier New", 11))
-        entry_my.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_my)
-        ctk.CTkLabel(row_my, text="pts", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
-
         self.var_margin_x.trace_add("write", lambda *_: self._on_margins_change())
         self.var_margin_y.trace_add("write", lambda *_: self._on_margins_change())
+        if "position_grid" not in _HIDDEN_UI_FEATURES:
+            ctk.CTkLabel(parent, text="Preset",
+                         fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), anchor="w").pack(anchor="w", padx=14, pady=(6, 2))
+            grid_frame = ctk.CTkFrame(parent, fg_color="#1a1a22", corner_radius=6)
+            grid_frame.pack(padx=20, pady=(0, 6), anchor="w")
+            for key, (row_n, col_n) in POSITION_PRESETS.items():
+                btn_preset = ctk.CTkButton(grid_frame, text=PRESET_LABELS[key],
+                                           width=44, height=32,
+                                           fg_color="#2a2a35", hover_color="#3a4a6a",
+                                           text_color="#dddddd", font=("Segoe UI", 14),
+                                           corner_radius=4,
+                                           command=lambda k=key: self._on_preset_click(k))
+                btn_preset.grid(row=row_n, column=col_n, padx=2, pady=2)
+                self._preset_buttons[key] = btn_preset
+                self._sidebar_interactive.append(btn_preset)
+        if "margins" not in _HIDDEN_UI_FEATURES:
+            row_mx = ctk.CTkFrame(parent, fg_color="transparent")
+            row_mx.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row_mx, text="Marge X", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+            entry_mx = ctk.CTkEntry(row_mx, textvariable=self.var_margin_x,
+                                    width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                    border_color="#3a3a4a", font=("Courier New", 11))
+            entry_mx.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_mx)
+            ctk.CTkLabel(row_mx, text="pts", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
+            row_my = ctk.CTkFrame(parent, fg_color="transparent")
+            row_my.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row_my, text="Marge Y", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=60, anchor="w").pack(side="left")
+            entry_my = ctk.CTkEntry(row_my, textvariable=self.var_margin_y,
+                                    width=55, fg_color="#2a2a35", text_color="#dddddd",
+                                    border_color="#3a3a4a", font=("Courier New", 11))
+            entry_my.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_my)
+            ctk.CTkLabel(row_my, text="pts", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
 
         # Label position courante
         self.lbl_pos = ctk.CTkLabel(parent, text="—",
@@ -808,148 +825,141 @@ class PDFHeaderApp:
         self.lbl_pos.pack(anchor="w", padx=14, pady=(4, 2))
 
         # ═══════════════════════════════════════════════════════════════
-        # ROTATION
+        # ROTATION — variable toujours créée (utilisée dans _draw_overlay et _apply)
         # ═══════════════════════════════════════════════════════════════
-        self._section(parent, "ROTATION")
-
-        rotation_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        rotation_frame.pack(fill="x", padx=14, pady=(6, 4))
         self.var_rotation = tk.IntVar(value=cfg.get("rotation", 0))
-        for angle in [0, 90, 180, 270]:
-            rb = ctk.CTkRadioButton(rotation_frame, text=f"{angle}°",
-                                    variable=self.var_rotation, value=angle,
-                                    text_color="#dddddd", font=("Segoe UI", 11),
-                                    command=self._on_text_change)
-            rb.pack(side="left", padx=6)
-            self._sidebar_interactive.append(rb)
+        if "rotation" not in _HIDDEN_UI_FEATURES:
+            self._section(parent, "ROTATION")
+            rotation_frame = ctk.CTkFrame(parent, fg_color="transparent")
+            rotation_frame.pack(fill="x", padx=14, pady=(6, 4))
+            for angle in [0, 90, 180, 270]:
+                rb = ctk.CTkRadioButton(rotation_frame, text=f"{angle}°",
+                                        variable=self.var_rotation, value=angle,
+                                        text_color="#dddddd", font=("Segoe UI", 11),
+                                        command=self._on_text_change)
+                rb.pack(side="left", padx=6)
+                self._sidebar_interactive.append(rb)
 
         # ═══════════════════════════════════════════════════════════════
-        # CADRE
+        # CADRE — variables toujours créées (utilisées dans _draw_overlay et _apply)
         # ═══════════════════════════════════════════════════════════════
-        self._section(parent, "CADRE")
-
-        self.var_use_frame = tk.BooleanVar(value=cfg.get("use_frame", False))
-        self._cb_frame = ctk.CTkCheckBox(parent, text="Activer le cadre",
-                                         variable=self.var_use_frame,
-                                         text_color="#dddddd", font=("Segoe UI", 12),
-                                         command=self._on_frame_toggle)
-        self._cb_frame.pack(anchor="w", padx=14, pady=(6, 4))
-        self._sidebar_interactive.append(self._cb_frame)
-
-        # Options cadre (masquables)
-        self._frame_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
-
-        row_fc = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
-        row_fc.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row_fc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
-        self.frame_color_swatch = tk.Canvas(row_fc, width=22, height=16,
-                                            bg=cfg.get("frame_color_hex", "#000000"),
-                                            highlightthickness=0, cursor="hand2")
-        self.frame_color_swatch.pack(side="left", padx=4)
-        self.lbl_frame_color = ctk.CTkLabel(row_fc, text=cfg.get("frame_color_hex", "#000000"),
-                                            fg_color="transparent", text_color="#888888",
-                                            font=("Courier New", 10))
-        self.lbl_frame_color.pack(side="left")
-        self.frame_color_swatch.bind("<Button-1>", self._pick_frame_color)
-
-        row_fw = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
-        row_fw.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row_fw, text="Épaisseur", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
-        self.var_frame_width = tk.StringVar(value=str(cfg.get("frame_width", 1.0)))
-        entry_fw = ctk.CTkEntry(row_fw, textvariable=self.var_frame_width,
-                                width=50, fg_color="#2a2a35", text_color="#dddddd",
-                                border_color="#3a3a4a", font=("Courier New", 11))
-        entry_fw.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_fw)
-        ctk.CTkLabel(row_fw, text="pts", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
-
-        row_fs = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
-        row_fs.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row_fs, text="Style", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
-        self.var_frame_style = tk.StringVar(value=cfg.get("frame_style", "solid"))
-        opt_fs = ctk.CTkOptionMenu(row_fs, values=["solid", "dashed"],
-                                   variable=self.var_frame_style,
-                                   fg_color="#2a2a35", button_color="#3a3a4a",
-                                   button_hover_color="#4a4a5a", text_color="#dddddd",
-                                   font=("Segoe UI", 11), width=110,
-                                   command=lambda _: self._on_text_change())
-        opt_fs.pack(side="left", padx=4)
-        self._sidebar_interactive.append(opt_fs)
-
-        row_fp = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
-        row_fp.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row_fp, text="Padding", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_use_frame    = tk.BooleanVar(value=cfg.get("use_frame", False))
+        self.var_frame_width  = tk.StringVar(value=str(cfg.get("frame_width", 1.0)))
+        self.var_frame_style  = tk.StringVar(value=cfg.get("frame_style", "solid"))
         self.var_frame_padding = tk.StringVar(value=str(cfg.get("frame_padding", 3.0)))
-        entry_fp = ctk.CTkEntry(row_fp, textvariable=self.var_frame_padding,
-                                width=50, fg_color="#2a2a35", text_color="#dddddd",
-                                border_color="#3a3a4a", font=("Courier New", 11))
-        entry_fp.pack(side="left", padx=4)
-        self._sidebar_interactive.append(entry_fp)
-        ctk.CTkLabel(row_fp, text="pts", fg_color="transparent", text_color="#666677",
-                     font=("Segoe UI", 10)).pack(side="left")
-
-        row_fo = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
-        row_fo.pack(fill="x", padx=10, pady=(2, 6))
-        ctk.CTkLabel(row_fo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
         self.var_frame_opacity = tk.DoubleVar(value=cfg.get("frame_opacity", 1.0))
-        slider_fo = ctk.CTkSlider(row_fo, from_=0.0, to=1.0, variable=self.var_frame_opacity,
-                                  width=110, command=lambda _: self._update_opacity_labels())
-        slider_fo.pack(side="left", padx=4)
-        self._sidebar_interactive.append(slider_fo)
-        self.lbl_frame_opacity = ctk.CTkLabel(
-            row_fo, text=f"{int(cfg.get('frame_opacity', 1.0)*100)}%",
-            fg_color="transparent", text_color="#888888", font=("Courier New", 10))
-        self.lbl_frame_opacity.pack(side="left", padx=2)
+        if "frame" not in _HIDDEN_UI_FEATURES:
+            self._section(parent, "CADRE")
+            self._cb_frame = ctk.CTkCheckBox(parent, text="Activer le cadre",
+                                             variable=self.var_use_frame,
+                                             text_color="#dddddd", font=("Segoe UI", 12),
+                                             command=self._on_frame_toggle)
+            self._cb_frame.pack(anchor="w", padx=14, pady=(6, 4))
+            self._sidebar_interactive.append(self._cb_frame)
+            self._frame_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+            row_fc = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+            row_fc.pack(fill="x", padx=10, pady=2)
+            ctk.CTkLabel(row_fc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            self.frame_color_swatch = tk.Canvas(row_fc, width=22, height=16,
+                                                bg=cfg.get("frame_color_hex", "#000000"),
+                                                highlightthickness=0, cursor="hand2")
+            self.frame_color_swatch.pack(side="left", padx=4)
+            self.lbl_frame_color = ctk.CTkLabel(row_fc, text=cfg.get("frame_color_hex", "#000000"),
+                                                fg_color="transparent", text_color="#888888",
+                                                font=("Courier New", 10))
+            self.lbl_frame_color.pack(side="left")
+            self.frame_color_swatch.bind("<Button-1>", self._pick_frame_color)
+            row_fw = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+            row_fw.pack(fill="x", padx=10, pady=2)
+            ctk.CTkLabel(row_fw, text="Épaisseur", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            entry_fw = ctk.CTkEntry(row_fw, textvariable=self.var_frame_width,
+                                    width=50, fg_color="#2a2a35", text_color="#dddddd",
+                                    border_color="#3a3a4a", font=("Courier New", 11))
+            entry_fw.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_fw)
+            ctk.CTkLabel(row_fw, text="pts", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
+            row_fs = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+            row_fs.pack(fill="x", padx=10, pady=2)
+            ctk.CTkLabel(row_fs, text="Style", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            opt_fs = ctk.CTkOptionMenu(row_fs, values=["solid", "dashed"],
+                                       variable=self.var_frame_style,
+                                       fg_color="#2a2a35", button_color="#3a3a4a",
+                                       button_hover_color="#4a4a5a", text_color="#dddddd",
+                                       font=("Segoe UI", 11), width=110,
+                                       command=lambda _: self._on_text_change())
+            opt_fs.pack(side="left", padx=4)
+            self._sidebar_interactive.append(opt_fs)
+            row_fp = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+            row_fp.pack(fill="x", padx=10, pady=2)
+            ctk.CTkLabel(row_fp, text="Padding", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            entry_fp = ctk.CTkEntry(row_fp, textvariable=self.var_frame_padding,
+                                    width=50, fg_color="#2a2a35", text_color="#dddddd",
+                                    border_color="#3a3a4a", font=("Courier New", 11))
+            entry_fp.pack(side="left", padx=4)
+            self._sidebar_interactive.append(entry_fp)
+            ctk.CTkLabel(row_fp, text="pts", fg_color="transparent", text_color="#666677",
+                         font=("Segoe UI", 10)).pack(side="left")
+            row_fo = ctk.CTkFrame(self._frame_options_frame, fg_color="transparent")
+            row_fo.pack(fill="x", padx=10, pady=(2, 6))
+            ctk.CTkLabel(row_fo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            slider_fo = ctk.CTkSlider(row_fo, from_=0.0, to=1.0, variable=self.var_frame_opacity,
+                                      width=110, command=lambda _: self._update_opacity_labels())
+            slider_fo.pack(side="left", padx=4)
+            self._sidebar_interactive.append(slider_fo)
+            self.lbl_frame_opacity = ctk.CTkLabel(
+                row_fo, text=f"{int(cfg.get('frame_opacity', 1.0)*100)}%",
+                fg_color="transparent", text_color="#888888", font=("Courier New", 10))
+            self.lbl_frame_opacity.pack(side="left", padx=2)
 
         # ═══════════════════════════════════════════════════════════════
         # FOND
         # ═══════════════════════════════════════════════════════════════
-        self._section(parent, "FOND")
-
-        self.var_use_bg = tk.BooleanVar(value=cfg.get("use_bg", False))
-        self._cb_bg = ctk.CTkCheckBox(parent, text="Activer le fond",
-                                      variable=self.var_use_bg,
-                                      text_color="#dddddd", font=("Segoe UI", 12),
-                                      command=self._on_bg_toggle)
-        self._cb_bg.pack(anchor="w", padx=14, pady=(6, 4))
-        self._sidebar_interactive.append(self._cb_bg)
-
-        # Options fond (masquables)
-        self._bg_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
-
-        row_bgc = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
-        row_bgc.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(row_bgc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
-        self.bg_color_swatch = tk.Canvas(row_bgc, width=22, height=16,
-                                         bg=cfg.get("bg_color_hex", "#FFFFFF"),
-                                         highlightthickness=0, cursor="hand2")
-        self.bg_color_swatch.pack(side="left", padx=4)
-        self.lbl_bg_color = ctk.CTkLabel(row_bgc, text=cfg.get("bg_color_hex", "#FFFFFF"),
-                                         fg_color="transparent", text_color="#888888",
-                                         font=("Courier New", 10))
-        self.lbl_bg_color.pack(side="left")
-        self.bg_color_swatch.bind("<Button-1>", self._pick_bg_color)
-
-        row_bgo = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
-        row_bgo.pack(fill="x", padx=10, pady=(2, 6))
-        ctk.CTkLabel(row_bgo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
-                     font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+        self.var_use_bg     = tk.BooleanVar(value=cfg.get("use_bg", False))
         self.var_bg_opacity = tk.DoubleVar(value=cfg.get("bg_opacity", 0.8))
-        slider_bgo = ctk.CTkSlider(row_bgo, from_=0.0, to=1.0, variable=self.var_bg_opacity,
-                                   width=110, command=lambda _: self._update_opacity_labels())
-        slider_bgo.pack(side="left", padx=4)
-        self._sidebar_interactive.append(slider_bgo)
-        self.lbl_bg_opacity = ctk.CTkLabel(
-            row_bgo, text=f"{int(cfg.get('bg_opacity', 0.8)*100)}%",
-            fg_color="transparent", text_color="#888888", font=("Courier New", 10))
-        self.lbl_bg_opacity.pack(side="left", padx=2)
+        if "background" not in _HIDDEN_UI_FEATURES:
+            self._section(parent, "FOND")
+            self._cb_bg = ctk.CTkCheckBox(parent, text="Activer le fond",
+                                          variable=self.var_use_bg,
+                                          text_color="#dddddd", font=("Segoe UI", 12),
+                                          command=self._on_bg_toggle)
+            self._cb_bg.pack(anchor="w", padx=14, pady=(6, 4))
+            self._sidebar_interactive.append(self._cb_bg)
+
+            # Options fond (masquables)
+            self._bg_options_frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+            row_bgc = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
+            row_bgc.pack(fill="x", padx=10, pady=2)
+            ctk.CTkLabel(row_bgc, text="Couleur", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            self.bg_color_swatch = tk.Canvas(row_bgc, width=22, height=16,
+                                             bg=cfg.get("bg_color_hex", "#FFFFFF"),
+                                             highlightthickness=0, cursor="hand2")
+            self.bg_color_swatch.pack(side="left", padx=4)
+            self.lbl_bg_color = ctk.CTkLabel(row_bgc, text=cfg.get("bg_color_hex", "#FFFFFF"),
+                                             fg_color="transparent", text_color="#888888",
+                                             font=("Courier New", 10))
+            self.lbl_bg_color.pack(side="left")
+            self.bg_color_swatch.bind("<Button-1>", self._pick_bg_color)
+
+            row_bgo = ctk.CTkFrame(self._bg_options_frame, fg_color="transparent")
+            row_bgo.pack(fill="x", padx=10, pady=(2, 6))
+            ctk.CTkLabel(row_bgo, text="Opacité", fg_color="transparent", text_color="#aaaaaa",
+                         font=("Segoe UI", 10), width=65, anchor="w").pack(side="left")
+            slider_bgo = ctk.CTkSlider(row_bgo, from_=0.0, to=1.0, variable=self.var_bg_opacity,
+                                       width=110, command=lambda _: self._update_opacity_labels())
+            slider_bgo.pack(side="left", padx=4)
+            self._sidebar_interactive.append(slider_bgo)
+            self.lbl_bg_opacity = ctk.CTkLabel(
+                row_bgo, text=f"{int(cfg.get('bg_opacity', 0.8)*100)}%",
+                fg_color="transparent", text_color="#888888", font=("Courier New", 10))
+            self.lbl_bg_opacity.pack(side="left", padx=2)
 
         # ═══════════════════════════════════════════════════════════════
         # APPLIQUER SUR
@@ -1196,6 +1206,8 @@ class PDFHeaderApp:
         self._on_text_change()
 
     def _update_frame_options_visibility(self):
+        if "frame" in _HIDDEN_UI_FEATURES:
+            return
         if self.var_use_frame.get():
             self._frame_options_frame.pack(fill="x", padx=4, after=self._cb_frame)
         else:
@@ -1206,6 +1218,8 @@ class PDFHeaderApp:
         self._on_text_change()
 
     def _update_bg_options_visibility(self):
+        if "background" in _HIDDEN_UI_FEATURES:
+            return
         if self.var_use_bg.get():
             self._bg_options_frame.pack(fill="x", padx=4, after=self._cb_bg)
         else:
@@ -1334,7 +1348,7 @@ class PDFHeaderApp:
         date_str = ""
         if self.var_use_date.get():
             fmt    = self.var_date_format.get() or "%d/%m/%Y"
-            source = self.var_date_source.get()
+            source = DATE_SOURCE_INTERNAL.get(self.var_date_source.get(), "today")
             if source == "file_mtime" and self.pdf_files and self.idx < len(self.pdf_files):
                 try:
                     mtime = self.pdf_files[self.idx].stat().st_mtime
@@ -1473,10 +1487,10 @@ class PDFHeaderApp:
                 pad_px = max(2, int(float(self.var_frame_padding.get()) * self.scale))
             except (ValueError, AttributeError):
                 pad_px = 2
-            bg_x0 = cx - pad_px
-            bg_y0 = cy - approx_h - pad_px
-            bg_x1 = cx + approx_w + pad_px
-            bg_y1 = cy + pad_px
+            bg_x0 = cx - approx_w / 2 - pad_px
+            bg_y0 = cy - approx_h / 2 - pad_px
+            bg_x1 = cx + approx_w / 2 + pad_px
+            bg_y1 = cy + approx_h / 2 + pad_px
             if self.var_use_bg.get():
                 bg_col = self.cfg.get("bg_color_hex", "#FFFFFF")
                 self.canvas.create_rectangle(bg_x0, bg_y0, bg_x1, bg_y1,
@@ -1492,20 +1506,21 @@ class PDFHeaderApp:
                                              outline=fc_hex, width=fw_px,
                                              dash=f_dash, fill="", tags="overlay")
 
-        # Texte avec rotation
+        # Texte avec rotation (ancré au centre)
         try:
-            self.canvas.create_text(cx, cy, text=text, anchor="sw",
+            self.canvas.create_text(cx, cy, text=text, anchor="center",
                                     fill=color, font=canvas_font,
                                     angle=rotation, tags="overlay")
         except tk.TclError:
-            self.canvas.create_text(cx, cy, text=text, anchor="sw",
+            self.canvas.create_text(cx, cy, text=text, anchor="center",
                                     fill=color, font=canvas_font, tags="overlay")
 
         # Soulignement approximatif (uniquement si rotation == 0)
         if self.var_underline.get() and rotation == 0:
             approx_w = max(len(text) * fpx * 0.65, 20)
-            ul_y = cy + max(1, int(fpx * 0.12))
-            self.canvas.create_line(cx, ul_y, cx + approx_w, ul_y,
+            approx_h = fpx * 1.4
+            ul_y = cy + approx_h / 2 + max(1, int(fpx * 0.06))
+            self.canvas.create_line(cx - approx_w / 2, ul_y, cx + approx_w / 2, ul_y,
                                     fill=color, width=max(1, int(fpx * 0.06)),
                                     tags="overlay")
 
@@ -1635,14 +1650,14 @@ class PDFHeaderApp:
                     except Exception:
                         pass
 
-                # Fond et cadre (avant le texte)
+                # Fond et cadre (avant le texte) — centrés sur (x_pt, fitz_y)
                 if use_bg or use_frame:
                     pad = frame_padding
                     bg_rect = fitz.Rect(
-                        x_pt - pad,
-                        fitz_y - font_size * 1.2 - pad,
-                        x_pt + text_width + pad,
-                        fitz_y + pad
+                        x_pt - text_width / 2 - pad,
+                        fitz_y - font_size * 0.6 - pad,
+                        x_pt + text_width / 2 + pad,
+                        fitz_y + font_size * 0.6 + pad
                     )
                     if use_bg:
                         pg.draw_rect(bg_rect,
@@ -1659,12 +1674,13 @@ class PDFHeaderApp:
                                      fill=None,
                                      dashes=dashes)
 
-                # Rect d'insertion du texte
+                # Rect d'insertion du texte — centré horizontalement sur x_pt
                 lineheight = font_size * line_spacing
-                text_rect  = fitz.Rect(
-                    x_pt,
+                half_w = max(pg_w / 2, text_width / 2 + 10)
+                text_rect = fitz.Rect(
+                    max(0, x_pt - half_w),
                     fitz_y - font_size * 2.0,
-                    x_pt + max(pg_w - x_pt, 10),
+                    min(pg_w, x_pt + half_w),
                     fitz_y + font_size * 0.5
                 )
                 _debug_log(
@@ -1679,16 +1695,16 @@ class PDFHeaderApp:
                     color=color_float,
                     rotate=rotation,
                     lineheight=lineheight,
-                    align=fitz.TEXT_ALIGN_LEFT,
+                    align=fitz.TEXT_ALIGN_CENTER,
                     **font_args,
                 )
 
-                # Soulignement
+                # Soulignement — centré sur x_pt
                 if underline:
                     ul_y = fitz_y + font_size * 0.15
                     pg.draw_line(
-                        fitz.Point(x_pt, ul_y),
-                        fitz.Point(x_pt + text_width, ul_y),
+                        fitz.Point(x_pt - text_width / 2, ul_y),
+                        fitz.Point(x_pt + text_width / 2, ul_y),
                         color=color_float,
                         width=max(0.5, font_size * 0.05)
                     )
@@ -1729,7 +1745,7 @@ class PDFHeaderApp:
             "custom_text":     self.var_custom_text.get(),
             "use_date":        self.var_use_date.get(),
             "date_position":   self.var_date_position.get(),
-            "date_source":     self.var_date_source.get(),
+            "date_source":     DATE_SOURCE_INTERNAL.get(self.var_date_source.get(), "today"),
             "date_format":     self.var_date_format.get(),
             "font_family":     self.var_font_family.get(),
             "font_size":       font_size,

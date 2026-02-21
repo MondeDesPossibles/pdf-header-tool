@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.4.0
-# Build   : build-2026.02.20.22
+# Build   : build-2026.02.21.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -23,6 +23,10 @@ Chaque étape doit être validée avant de passer à la suivante.
   - Étape 3 -> `v0.3.0`
   - Étape 4 -> `v0.4.0`
   - Étape 4.5 -> `v0.4.5`
+  - Étape 4.6 -> `v0.4.6`
+  - Étape 4.7 -> `v0.4.7`
+  - Étape 4.8 -> `v0.4.8`
+  - Étape 4.9 -> `v0.4.9`
   - Étape 5 -> `v0.5.0`
   - Étape 6 -> `v0.6.0`
   - Étape 7 -> `v0.7.0`
@@ -139,7 +143,7 @@ Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 - Option date du jour par défaut
 - Date utilisable en préfixe ou suffixe
 - Personnalisation du format de date
-- Source de date configurable (date du jour ou métadonnée fichier)
+- Source de date configurable (date du jour ou date de création fichier)
 - Aperçu temps réel conservé
 
 ### Typographie
@@ -178,52 +182,215 @@ Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 
 ---
 
-## Étape 4.5 — Refactoring technique intermédiaire
-**Statut : À faire — dépend des Étapes 1 à 4**
+## Étape 4.5 — Centralisation des constantes et valeurs en dur
+**Statut : À faire — dépend de l'Étape 4**
 **Version cible : 0.4.5**
 
-Objectif: réduire la complexité de `pdf_header.py`, améliorer la maintenabilité
-et préparer les évolutions (dont traduction UI).
+Objectif : améliorer la lisibilité et la maintenabilité de `pdf_header.py` sans changer
+le comportement ni la structure des fichiers. Zéro risque de régression.
 
-### Découpage du code
-- `pdf_header.py` devient un point d'entrée léger (bootstrap + lancement)
-- Extraire la logique métier dans des modules dédiés:
-  - `app/config.py`
-  - `app/models.py`
-  - `app/services/pdf_service.py`
-  - `app/services/layout_service.py`
-  - `app/services/font_service.py`
-  - `app/ui/...` (fenêtre principale, sidebar, panneau liste)
-- Isoler les fonctions pures (layout, calculs positions, wrapping) pour faciliter les tests
+### Constantes UI
+- Déplacer toutes les couleurs hex dans un bloc `COLORS = {}` en tête de script
+- Déplacer toutes les tailles et espacements fixes dans un bloc `SIZES = {}`
+  (`SIDEBAR_WIDTH`, `FILE_PANEL_WIDTH`, `TOPBAR_HEIGHT`, etc.)
+- Déplacer les durées et délais dans `TIMINGS = {}` (débounce overlay, timeout réseau, etc.)
 
-### Éliminer les valeurs en dur
-- Centraliser les couleurs hex dans des constantes/thèmes
-- Centraliser les polices et fallbacks par plateforme
-- Centraliser les tailles, espacements, marges, durées d'animation, tailles widgets
-- Centraliser tous les textes UI dans des ressources dédiées
-- Supprimer les "magic numbers" (coordonnées, offsets, tailles fixes) au profit de constantes nommées
+### Suppression des magic numbers
+- Remplacer toutes les constantes numériques non nommées (coordonnées, offsets, tailles fixes)
+  par des références aux blocs ci-dessus
+- Supprimer les chaînes de couleur dupliquées
 
-### Préparation i18n (traduction)
-- Introduire un dictionnaire de traductions par langue (`fr`, `en`) avec clé stable
-- Remplacer les chaînes UI codées en dur par des clés (`t("sidebar.apply")`, etc.)
-- Prévoir un fallback automatique sur le français si clé absente
-- Ajouter un paramètre de langue dans la config utilisateur
+### Périmètre strict
+- Aucun découpage de fichier — tout reste dans `pdf_header.py`
+- Aucun changement de comportement ou d'interface visible
 
-### Fiabilisation et qualité
-- Ajouter des tests unitaires ciblés:
-  - composition de texte (préfixe/suffixe/date)
-  - wrapping par mots
-  - calcul de position/rotation
-- Uniformiser la gestion d'erreurs et les messages utilisateur
-- Introduire des logs structurés par module avec niveaux (`INFO`, `WARNING`, `ERROR`)
-- Ajouter une validation stricte de configuration (chargement/migration JSON)
+---
 
-### Suggestions additionnelles de refactor
-- Introduire des dataclasses pour les états UI et les éléments PDF
-- Ajouter du typage progressif (`typing`) sur les fonctions critiques
-- Séparer clairement état applicatif, logique métier et rendu UI
-- Préparer une couche "adapters" pour isoler PyMuPDF et limiter l'impact des changements de lib
-- Définir un protocole de migration de config versionnée (`config_version`)
+## Étape 4.6 — Distribution Python Embarqué (Windows, zero-install)
+**Statut : À faire — dépend de l'Étape 4.5**
+**Version cible : 0.4.6**
+
+Passer d'un modèle "installer Python sur le système" à un modèle "portable" :
+l'utilisateur dézipe et double-clique. Aucun Python système requis sur Windows.
+
+### Nouvelle structure de distribution
+```
+PDFHeaderTool/
+├── python/                    # Python Embeddable Package (python-3.11.x-embed-amd64)
+│   ├── python.exe
+│   ├── python311.dll
+│   ├── python311._pth         # modifié : "import site" décommenté
+│   └── ...
+├── site-packages/             # dépendances pip installées ici au premier lancement
+├── get-pip.py                 # bundlé dans l'archive — pas de téléchargement requis
+├── pdf_header.py              # script principal (inchangé)
+├── version.txt
+├── lancer.bat                 # point d'entrée utilisateur (double-clic)
+└── setup.bat                  # installation silencieuse des dépendances (1er lancement)
+```
+
+### lancer.bat — comportement
+1. Active UTF-8 (`chcp 65001`)
+2. Vérifie la présence de `python\python.exe` (sanity check)
+3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` en attente
+4. Lance `python\python.exe pdf_header.py`
+5. Log dans `pdf_header_launch.log`
+
+### setup.bat — comportement
+1. Installe pip via `get-pip.py` bundlé :
+   `python\python.exe get-pip.py --no-warn-script-location`
+2. Installe les dépendances dans `site-packages\` :
+   `python\python.exe -m pip install --target=site-packages pymupdf pillow customtkinter`
+3. Log complet dans `pdf_header_install.log`
+
+### pdf_header.py — changements
+- `_get_install_dir()` : retourne `Path(__file__).parent` dans tous les cas
+  (plus de `%LOCALAPPDATA%` — l'app est portable USB/réseau)
+- `_bootstrap()` : devient un no-op (vérifie uniquement que les imports fonctionnent)
+
+### Script de build (repo, dev only)
+- `build_dist.py` : télécharge Python embed, copie les fichiers, crée le zip de distribution
+- `get-pip.py` bundlé dans le repo (source : https://bootstrap.pypa.io/get-pip.py)
+
+### Linux (inchangé)
+- Python système utilisé directement
+- Lancement via `python3 pdf_header.py` ou script `lancer.sh`
+- Dépendances installées manuellement : `pip install pymupdf pillow customtkinter`
+
+### Mise à jour `CLAUDE.md`
+- Remplacer la section `install.bat` par la nouvelle section Distribution
+- Mettre à jour `INSTALL_DIR` dans la description des constantes
+
+---
+
+## Étape 4.7 — Découpage modulaire (multi-fichiers)
+**Statut : À faire — dépend de l'Étape 4.6**
+**Version cible : 0.4.7**
+**Prérequis : structure Python Embarqué en place (Étape 4.6)**
+
+Migrer `pdf_header.py` d'un script monolithique vers un package structuré `app/`.
+
+### Nouvelle arborescence
+```
+PDFHeaderTool/
+├── python/                    # Python Embarqué (inchangé)
+├── site-packages/             # dépendances (inchangées)
+├── app/
+│   ├── __init__.py
+│   ├── config.py              # load_config(), save_config(), migration, DEFAULT_CONFIG
+│   ├── models.py              # dataclasses : Config, Position, FontDescriptor
+│   ├── constants.py           # COLORS, SIZES, TIMINGS, BUILTIN_FONTS, PRIORITY_FONTS, etc.
+│   ├── update.py              # check_update(), logique GitHub
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── pdf_service.py     # fitz.open(), insert_textbox(), sauvegarde
+│   │   ├── layout_service.py  # calculs position/rotation, wrapping, ratio ↔ points
+│   │   └── font_service.py    # _get_font_dirs(), _find_priority_fonts(), _get_fitz_font_args()
+│   └── ui/
+│       ├── __init__.py
+│       ├── main_window.py     # PDFHeaderApp (classe principale)
+│       ├── sidebar.py         # _build_sidebar() et toutes ses sections
+│       └── file_panel.py      # panneau liste des fichiers
+├── pdf_header.py              # point d'entrée léger (5-10 lignes)
+├── version.txt
+├── lancer.bat
+└── setup.bat
+```
+
+### Principes de découpage
+- Fonctions **pures** (calculs, wrapping, layout) → `services/` — testables sans GUI
+- Config (chargement, sauvegarde, migration JSON) → `config.py`
+- Constantes globales (issues de l'Étape 4.5) → `constants.py`
+- Dataclasses → `models.py`
+- `PDFHeaderApp` reste dans `ui/main_window.py`, délègue aux services
+
+### Point d'entrée `pdf_header.py` (allégé)
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from app.ui.main_window import PDFHeaderApp
+import customtkinter as ctk
+
+if __name__ == "__main__":
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
+    PDFHeaderApp().mainloop()
+```
+
+### Rétrocompatibilité
+- La config JSON (`pdf_header_config.json`) n'est pas modifiée
+- La logique de migration existante est déplacée vers `config.py` sans changement
+
+### Mise à jour `CLAUDE.md`
+- Mettre à jour la section Architecture complète avec la nouvelle arborescence
+- Supprimer la contrainte "fichier unique"
+- Documenter les méthodes clés par module
+
+---
+
+## Étape 4.8 — Préparation i18n (traduction)
+**Statut : À faire — dépend de l'Étape 4.7**
+**Version cible : 0.4.8**
+**Prérequis : découpage modulaire terminé (Étape 4.7)**
+
+Introduire une couche de traduction sans modifier le comportement visible.
+Langue par défaut : français.
+
+### Système de traduction
+- `app/i18n/__init__.py` : fonction `t(key, **kwargs)` avec fallback FR si clé absente
+- `app/i18n/fr.py` : dictionnaire de toutes les chaînes UI (clés stables)
+- `app/i18n/en.py` : traduction anglaise (à compléter progressivement)
+- Clé de config : `"language"` (`"fr"` par défaut)
+
+### Convention de clés
+```python
+t("sidebar.section.header_text")  # → "TEXTE DE L'EN-TÊTE"
+t("sidebar.apply_button")         # → "Appliquer"
+t("error.pdf_corrupt")            # → "Le fichier PDF est corrompu."
+```
+
+### Règles de remplacement
+- Toutes les chaînes UI → `t("clé")`
+- Chaînes internes (log, config keys, fitz args) → conservées en dur
+
+### Sélecteur de langue
+- Ajout dans Préférences (Étape 13) : `fr` / `en`
+- Rechargement dynamique des chaînes à la volée ou relance de l'app
+
+---
+
+## Étape 4.9 — Tests unitaires, typing et qualité
+**Statut : À faire — dépend de l'Étape 4.7**
+**Version cible : 0.4.9**
+**Prérequis : découpage modulaire terminé (Étape 4.7)**
+
+### Tests unitaires
+- Framework : `pytest` (dépendance dev uniquement — non bundlé dans la distribution)
+- Dossier : `tests/`
+- Priorité :
+  - `layout_service` : calcul position depuis preset + marges, conversion ratio ↔ pts
+  - `config.py` : migration ancienne → nouvelle config
+  - `services/` : composition texte (préfixe/suffixe/date), wrapping par mots
+
+### Type hints
+- `typing` sur toutes les fonctions des `services/` et `config.py`
+- Méthodes critiques de `PDFHeaderApp` (`_apply`, `_render_preview`)
+- Callbacks UI : non typés (trop verbeux pour peu de valeur)
+
+### Dataclasses
+- `models.py` : `Config` (remplace le dict `cfg`), `FontDescriptor`, `Position`
+- Préparer `Element` (sera utilisé à l'Étape 10)
+- `Config` expose `.get(key, default)` pour la migration douce
+
+### Logs structurés
+- `logging.getLogger(__name__)` par module, niveaux `DEBUG` / `INFO` / `WARNING` / `ERROR`
+- `_debug_log()` conservé comme wrapper (alias vers le logger du module principal)
+
+### Validation de config
+- Types et plages vérifiés au chargement (`font_size` in [4, 72], `rotation` in [0, 90, 180, 270])
+- `config_version` dans le JSON pour versionner les migrations futures
 
 ---
 

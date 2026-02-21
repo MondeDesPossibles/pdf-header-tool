@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.0
-# Build   : build-2026.02.20.22
+# Build   : build-2026.02.21.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -17,6 +17,8 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 
 ## Architecture
 
+### Actuelle (v0.4.x — fichier unique)
+
 ```
 pdf-header-tool/
 ├── pdf_header.py     # Script principal — toute la logique est ici
@@ -27,6 +29,36 @@ pdf-header-tool/
 ├── CLAUDE.md         # Ce fichier
 └── README.md         # Documentation utilisateur
 ```
+
+### Cible (à partir de v0.4.6 / v0.4.7 — distribution portable + package)
+
+Distribution portable Windows — aucun Python système requis :
+
+```
+PDFHeaderTool/        # dossier de distribution (zippé pour livraison)
+├── python/           # Python Embeddable 3.11.x (Windows uniquement)
+├── site-packages/    # dépendances pip (pymupdf, pillow, customtkinter)
+├── app/              # package Python (à partir de v0.4.7)
+│   ├── config.py     # chargement/sauvegarde/migration config
+│   ├── models.py     # dataclasses : Config, Position, FontDescriptor
+│   ├── constants.py  # COLORS, SIZES, TIMINGS, BUILTIN_FONTS, PRIORITY_FONTS
+│   ├── update.py     # check_update(), logique GitHub
+│   ├── services/
+│   │   ├── pdf_service.py     # fitz : ouverture, insertion, sauvegarde
+│   │   ├── layout_service.py  # calculs position, rotation, ratio ↔ pts
+│   │   └── font_service.py    # découverte et sélection des polices
+│   └── ui/
+│       ├── main_window.py     # PDFHeaderApp (classe principale)
+│       ├── sidebar.py         # _build_sidebar() et sections
+│       └── file_panel.py      # panneau liste des fichiers
+├── pdf_header.py     # point d'entrée léger (5-10 lignes)
+├── version.txt
+├── lancer.bat        # double-clic pour lancer (Windows)
+├── setup.bat         # installation dépendances au premier lancement
+└── README.md
+```
+
+Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py`.
 
 ---
 
@@ -159,9 +191,11 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 
 ---
 
-## install.bat — Structure et comportement
+## Distribution et lancement
 
-### Fonctionnement général
+### Modèle actuel (v0.4.x) — install.bat + venv système
+
+**Fonctionnement général :**
 1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
 2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
 3. Vérifie Python simplement avec `python --version`
@@ -170,25 +204,51 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 6. Lance `install.py` une fois un Python standard détecté
 7. Ferme automatiquement en cas de succès (pause uniquement en cas d'erreur)
 
-### Méthode de téléchargement Python
-1. Vérification unique via `python --version`
-2. Installation manuelle Python via `https://www.python.org/downloads/`
-3. Python Microsoft Store non supporté pour l'installation de l'outil
-
-### Fichier log
-- Chemin : `<dossier_install>\pdf_header_install.log`
-- Affiché à l'écran dès le début et à chaque erreur
-- Contient : horodatage, OS, utilisateur, répertoire, toutes les étapes, codes de retour
-
-### Points d'attention pour toute modification de install.bat
+**Points d'attention pour toute modification de install.bat :**
 - Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
 - Toujours logger avant ET après chaque opération critique
-- Tester sur une machine sans Python ET sur une machine avec Python ancien
 - La variable `PYTHON_CMD` doit être définie avant `:run_installer`
-- Cible d'installation: `%LOCALAPPDATA%\\PDFHeaderTool`
-- Python Microsoft Store est explicitement refusé par `install.bat` pour éviter la virtualisation des chemins
+- Cible d'installation actuelle : `%LOCALAPPDATA%\\PDFHeaderTool`
+
+### Modèle cible (à partir de l'Étape 4.6) — Python Embarqué portable
+
+L'objectif est de supprimer toute dépendance à un Python système sur Windows.
+L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Rien d'autre.
+
+**`lancer.bat` — nouveau rôle :**
+1. Active UTF-8 (`chcp 65001`)
+2. Vérifie la présence de `python\python.exe`
+3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` et attend
+4. Lance `python\python.exe pdf_header.py`
+5. Log dans `pdf_header_launch.log`
+
+**`setup.bat` — installation premier lancement (remplace install.bat + install.py) :**
+1. Installe pip via `get-pip.py` bundlé (pas de téléchargement)
+2. Installe les dépendances dans `site-packages\` via pip `--target`
+3. Log complet dans `pdf_header_install.log`
+
+**`_get_install_dir()` cible :**
+- Retourne `Path(__file__).parent` dans tous les cas (portable, plus de `%LOCALAPPDATA%`)
+
+**`_bootstrap()` cible :**
+- Devient un no-op (supprimé ou réduit à un `try: import fitz` de vérification)
+
+**Points d'attention pour toute modification (modèle cible) :**
+- Ne jamais utiliser de caractères Unicode dans les `echo`
+- Toujours logger avant ET après chaque opération critique
+- `python\python311._pth` doit avoir `import site` décommenté et `../site-packages` présent
+- Tester sur machine sans Python ET sur machine avec Python ancien ou Store
 
 ---
+
+## Corrections à apporter (avant livraison)
+- **Croix de positionnement** : indique actuellement le coin supérieur-gauche de la zone de texte.
+  Objectif : la croix doit marquer le **centre géométrique** de la zone d'insertion.
+  Implémentation : estimer `text_w` via `fitz.Font.text_length()` et `text_h` via `nb_lignes × font_size × line_spacing`,
+  puis centrer le rect autour du point cliqué : `[x_pt - text_w/2, y_pt - text_h/2, x_pt + text_w/2, y_pt + text_h/2]`.
+  Mettre à jour `_draw_overlay()` en conséquence pour que l'aperçu soit lui aussi centré sur la croix.
+- **Libellé `date_source`** : la valeur `"file_mtime"` (interne) ne doit jamais être affichée dans l'UI.
+  Remplacer le libellé affiché par "Date de création fichier" tout en conservant la clé interne `"file_mtime"`.
 
 ## Problèmes connus et corrections déjà apportées
 - `_draw_overlay()` appelée avant que `self.canvas` existe → guard `if not hasattr(self, 'canvas'): return`
@@ -217,9 +277,10 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 
 ### 2. Périmètre des modifications
 
-- Modifier `pdf_header.py` en priorité — c'est le fichier central
-- Ne modifier `install.py` ou `install.bat` que si la tâche le requiert explicitement
-- Pour `install.bat` : ne jamais utiliser de caractères Unicode dans les `echo`, toujours logger avant/après chaque étape critique
+- **Avant l'Étape 4.7** : modifier `pdf_header.py` — c'est le fichier central.
+  À partir de l'Étape 4.7 : modifier le module concerné dans `app/` (voir Architecture cible)
+- Ne modifier `install.bat` / `setup.bat` / `lancer.bat` que si la tâche le requiert explicitement
+- Pour tout `.bat` : ne jamais utiliser de caractères Unicode dans les `echo`, toujours logger avant/après chaque étape critique
 - Toujours mettre à jour `CLAUDE.md` si l'architecture ou les méthodes changent
 - Toujours mettre à jour `ROADMAP.md` pour marquer l'étape comme terminée
 
@@ -232,7 +293,8 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 - **Aucun `print()` de debug** dans le code final — utiliser le logger
 - **Aucun code commenté** laissé en place — supprimer proprement
 - **Aucune fonction inutilisée** — nettoyer après refactoring
-- Toute nouvelle dépendance doit être ajoutée dans `_bootstrap()` ET dans la section Dépendances de ce fichier
+- Jusqu'à l'Étape 4.6 : toute nouvelle dépendance doit être dans `_bootstrap()` ET dans la section Dépendances de ce fichier.
+  À partir de l'Étape 4.6 : les dépendances sont déclarées dans `setup.bat` (Python Embarqué)
 
 ### 4. Compatibilité obligatoire
 
@@ -358,7 +420,7 @@ except Exception:
 |-----------|---------------------|
 | Python < 3.8 | Message explicite avec lien `python.org/downloads` |
 | Dépendance impossible à installer | Message avec instructions manuelles : `pip install pymupdf Pillow customtkinter` |
-| Venv corrompu | Détecter (`venv_python` inexistant après création), proposer de le recréer en supprimant `.venv/` |
+| Venv corrompu | (v0.4.x) Détecter (`venv_python` inexistant après création), proposer de le recréer en supprimant `.venv/`. À partir de l'Étape 4.6 : plus de venv — Python Embarqué |
 
 ### Gestionnaire global d'exceptions non catchées
 
@@ -387,7 +449,8 @@ sys.excepthook = _global_exception_handler
 
 ## Conventions de développement
 
-- Tout le code dans un seul fichier `pdf_header.py` (portable, auto-suffisant)
+- Jusqu'à l'Étape 4.7 : tout le code dans un seul fichier `pdf_header.py`.
+  À partir de l'Étape 4.7 : code découpé en package `app/` (voir Architecture cible)
 - GUI : CustomTkinter (à partir de v1.1.0) + `tk.Canvas` pour la prévisualisation
 - Langue de l'interface : français
 - Messages d'erreur : français, clairs, sans jargon technique
