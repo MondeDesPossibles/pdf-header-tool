@@ -1650,14 +1650,18 @@ class PDFHeaderApp:
                     except Exception:
                         pass
 
+                # half_h : demi-hauteur d'une ligne — sert à centrer texte/cadre/fond sur fitz_y
+                lineheight = line_spacing  # facteur multiplicateur de fontsize (ex: 1.2 → 1.2×12=14.4 pts)
+                half_h = font_size * lineheight / 2
+
                 # Fond et cadre (avant le texte) — centrés sur (x_pt, fitz_y)
                 if use_bg or use_frame:
                     pad = frame_padding
                     bg_rect = fitz.Rect(
                         x_pt - text_width / 2 - pad,
-                        fitz_y - font_size * 0.6 - pad,
+                        fitz_y - half_h - pad,
                         x_pt + text_width / 2 + pad,
-                        fitz_y + font_size * 0.6 + pad
+                        fitz_y + half_h + pad
                     )
                     if use_bg:
                         pg.draw_rect(bg_rect,
@@ -1674,14 +1678,15 @@ class PDFHeaderApp:
                                      fill=None,
                                      dashes=dashes)
 
-                # Rect d'insertion du texte — centré horizontalement sur x_pt
-                lineheight = line_spacing  # facteur multiplicateur de fontsize (ex: 1.2 → 1.2×12=14.4 pts)
+                # Rect d'insertion du texte — centré sur (x_pt, fitz_y)
+                # y0 = fitz_y - half_h → insert_textbox remplit vers le bas sur font_size*lineheight
+                # → centre visuel du texte ≈ fitz_y, cohérent avec l'overlay (anchor="center")
                 half_w = max(pg_w / 2, text_width / 2 + 10)
                 text_rect = fitz.Rect(
                     max(0, x_pt - half_w),
-                    fitz_y - font_size * 2.0,
+                    fitz_y - half_h,
                     min(pg_w, x_pt + half_w),
-                    fitz_y + font_size * 0.5
+                    fitz_y + half_h * 2   # marge extra en bas pour éviter toute troncature
                 )
                 _debug_log(
                     f"  page[{i}] pg=({pg_w:.1f}x{pg_h:.1f}) "
