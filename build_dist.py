@@ -2,7 +2,7 @@
 # ==============================================================================
 # PDF Header Tool — build_dist.py
 # Version : 0.4.6
-# Build   : build-2026.02.21.04
+# Build   : build-2026.02.21.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Usage   : python3 build_dist.py [--python-version 3.11.9]
 # Dev-only : ne pas inclure dans la distribution finale.
@@ -12,9 +12,11 @@ Script de build pour la distribution Windows portable (bundle complet).
 
 Étapes :
   1. Télécharger Python Embeddable Package (amd64) depuis python.org
-  2. Télécharger Python NuGet package (pour les DLLs Tcl/Tk)
+  2. Source Tcl/Tk (deux modes, par priorité) :
+     a. Dossier local tcltk/  — si présent, utilisé en priorité (recommandé)
+     b. Python NuGet package  — téléchargé automatiquement si tcltk/ absent
   3. Extraire Python Embedded dans dist/PDFHeaderTool-vX.Y.Z/python/
-  4. Copier les DLLs Tcl/Tk depuis le NuGet → python/
+  4. Copier les DLLs Tcl/Tk + scripts → python/
   5. Patcher python3XX._pth : décommenter "import site" + ajouter "../site-packages"
   6. Installer les dépendances (pymupdf, pillow, customtkinter) dans site-packages/
      via pip cross-compilation Windows (fonctionne depuis Linux)
@@ -23,7 +25,15 @@ Script de build pour la distribution Windows portable (bundle complet).
 
 Prérequis :
   - pip installé sur la machine de build (pip3)
-  - Connexion internet (pour télécharger Python Embedded, NuGet et les wheels)
+  - Connexion internet si tcltk/ absent (télécharge Python Embedded, NuGet, wheels)
+  - OU dossier tcltk/ présent (pour Tcl/Tk sans internet)
+
+Dossier tcltk/ (source locale recommandée) :
+  Copier depuis une installation Python 3.11.x Windows (64-bit) :
+    tcltk/tcl86t.dll      ← Python311/tcl86t.dll
+    tcltk/tk86t.dll       ← Python311/tk86t.dll
+    tcltk/tcl/            ← Python311/tcl/  (contient tcl8.6/ et tk8.6/)
+  Ajouter tcltk/ au .gitignore (binaires lourds, non versionnés).
 
 Résultat :
   - Zip entièrement auto-contenu : aucun internet requis sur la machine utilisateur
@@ -42,6 +52,7 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 DEFAULT_PYTHON_VERSION = "3.11.9"
+BUILD_ID               = "build-2026.02.21.07"   # incrémenter à chaque build
 
 PYTHON_EMBED_URL_TEMPLATE = (
     "https://www.python.org/ftp/python/{ver}/python-{ver}-embed-amd64.zip"
@@ -61,8 +72,9 @@ TCLK_DIRS = [
     "tools/tk",
 ]
 
-SCRIPT_DIR = Path(__file__).parent
-DIST_BASE  = SCRIPT_DIR / "dist"
+SCRIPT_DIR     = Path(__file__).parent
+DIST_BASE      = SCRIPT_DIR / "dist"
+TCLTK_LOCAL    = SCRIPT_DIR / "tcltk"   # dossier local (non versionné, voir .gitignore)
 
 # Fichiers du projet à copier dans la distribution
 PROJECT_FILES = [
@@ -76,6 +88,29 @@ PROJECT_FILES = [
 # ---------------------------------------------------------------------------
 def _log(msg: str) -> None:
     print(f"  {msg}")
+
+
+def _find_pip() -> list:
+    """Retourne la commande pip utilisable sur cette machine.
+
+    Essaie dans l'ordre :
+      1. python3 -m pip  (pip dans le module Python courant)
+      2. pip3            (commande système)
+      3. pip             (commande système générique)
+    """
+    for candidate in [
+        [sys.executable, "-m", "pip"],
+        ["pip3"],
+        ["pip"],
+    ]:
+        result = subprocess.run(
+            candidate + ["--version"],
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return candidate
+    print("  ERREUR : pip introuvable. Installez-le avec : sudo pacman -S python-pip", file=sys.stderr)
+    sys.exit(1)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -114,6 +149,63 @@ def _patch_pth(python_dir: Path) -> None:
         _log(f"Ajouté : '../site-packages' dans {pth_file.name}")
 
     pth_file.write_text(content, encoding="utf-8")
+
+
+def _copy_tcltk_local(tcltk_dir: Path, python_dir: Path) -> None:
+    """Copie les DLLs, le module Python tkinter et les scripts Tcl/Tk.
+
+    Structure attendue dans tcltk/ (issue d'une install Windows Python 3.11.x) :
+      tcltk/_tkinter.pyd    ← DLLs/_tkinter.pyd      → python/_tkinter.pyd
+      tcltk/tcl86t.dll      ← tcl86t.dll             → python/tcl86t.dll
+      tcltk/tk86t.dll       ← tk86t.dll              → python/tk86t.dll
+      tcltk/tkinter/        ← Lib/tkinter/           → python/tkinter/
+      tcltk/tcl/            ← tcl/                   → python/tcl/  (tcl8.6/ ET tk8.6/ côte à côte)
+
+    Notes :
+      - _tkinter.pyd et tkinter/ sont ABSENTS du Python Embedded officiel
+      - Les deux doivent être copiés depuis une installation Windows standard
+      - tkinter/ va dans python/ car '.' est dans sys.path (via ._pth)
+      - tcl/ doit être copié EN ENTIER : _tkinter.pyd cherche TK_LIBRARY dans
+        python/tcl/tk8.6/ (structure du full install Windows, pas du NuGet)
+    """
+    _log(f"Copie Tcl/Tk depuis le dossier local : {tcltk_dir.name}/")
+
+    for dll in ["_tkinter.pyd", "tcl86t.dll", "tk86t.dll"]:
+        src = tcltk_dir / dll
+        if not src.exists():
+            print(f"  AVERTISSEMENT : {dll} introuvable dans {tcltk_dir}", file=sys.stderr)
+            if dll == "_tkinter.pyd":
+                print(
+                    "    → Copiez DLLs\\_tkinter.pyd depuis votre install Python Windows",
+                    file=sys.stderr,
+                )
+            continue
+        shutil.copy2(src, python_dir / dll)
+        _log(f"  Copié : {dll} ({src.stat().st_size // 1024} Ko)")
+
+    # module Python tkinter : tcltk/tkinter/ → python/tkinter/
+    # (absent de python311.zip dans l'Embedded — doit être fourni séparément)
+    tkinter_src = tcltk_dir / "tkinter"
+    tkinter_dst = python_dir / "tkinter"
+    if tkinter_src.exists():
+        shutil.copytree(tkinter_src, tkinter_dst)
+        count = sum(1 for f in tkinter_dst.rglob("*") if f.is_file())
+        _log(f"  Copié : tkinter/ ({count} fichiers)")
+    else:
+        print(f"  AVERTISSEMENT : tkinter/ introuvable dans {tcltk_dir}", file=sys.stderr)
+        print("    → Copiez Lib\\tkinter\\ depuis votre install Python Windows", file=sys.stderr)
+
+    # Scripts Tcl/Tk : copie du dossier tcl/ complet → python/tcl/
+    # _tkinter.pyd (issu d'une install Windows) cherche TK_LIBRARY dans python/tcl/tk8.6/
+    # → tcl8.6/ et tk8.6/ doivent être côte à côte sous python/tcl/ (structure Windows)
+    tcl_src = tcltk_dir / "tcl"
+    tcl_dst = python_dir / "tcl"
+    if tcl_src.exists():
+        shutil.copytree(tcl_src, tcl_dst)
+        count = sum(1 for f in tcl_dst.rglob("*") if f.is_file())
+        _log(f"  Copié : tcl/ complet ({count} fichiers) → python/tcl/")
+    else:
+        print(f"  AVERTISSEMENT : tcl/ introuvable dans {tcltk_dir}", file=sys.stderr)
 
 
 def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
@@ -168,7 +260,7 @@ def build(python_version: str) -> None:
     else:
         project_version = "0.4.6"
 
-    dist_name = f"PDFHeaderTool-v{project_version}"
+    dist_name = f"PDFHeaderTool-v{project_version}-{BUILD_ID}"
     dist_dir  = DIST_BASE / dist_name
     zip_path  = DIST_BASE / f"{dist_name}.zip"
 
@@ -198,16 +290,23 @@ def build(python_version: str) -> None:
         _download(embed_url, embed_zip_path)
         _log(f"Terminé : {embed_zip_name} ({embed_zip_path.stat().st_size // 1024} Ko)")
 
-    # 3. Téléchargement Python NuGet (cache local dans dist/) — pour Tcl/Tk DLLs
-    nuget_url      = PYTHON_NUGET_URL_TEMPLATE.format(ver=python_version)
-    nuget_zip_name = f"python-{python_version}-nuget.nupkg"
-    nuget_zip_path = DIST_BASE / nuget_zip_name
+    # 3. Source Tcl/Tk : dossier local tcltk/ en priorité, NuGet en fallback
+    use_local_tcltk = TCLTK_LOCAL.exists() and (TCLTK_LOCAL / "tcl86t.dll").exists()
 
-    if nuget_zip_path.exists():
-        _log(f"Python NuGet déjà en cache : {nuget_zip_name}")
+    nuget_zip_path = None
+    if not use_local_tcltk:
+        nuget_url      = PYTHON_NUGET_URL_TEMPLATE.format(ver=python_version)
+        nuget_zip_name = f"python-{python_version}-nuget.nupkg"
+        nuget_zip_path = DIST_BASE / nuget_zip_name
+
+        if nuget_zip_path.exists():
+            _log(f"Python NuGet déjà en cache : {nuget_zip_name}")
+        else:
+            _log("Dossier tcltk/ absent — téléchargement NuGet (fallback)...")
+            _download(nuget_url, nuget_zip_path)
+            _log(f"Terminé : {nuget_zip_name} ({nuget_zip_path.stat().st_size // 1024} Ko)")
     else:
-        _download(nuget_url, nuget_zip_path)
-        _log(f"Terminé : {nuget_zip_name} ({nuget_zip_path.stat().st_size // 1024} Ko)")
+        _log(f"Dossier tcltk/ détecté — NuGet ignoré")
 
     # 4. Extraction Python Embedded → python/
     python_dir = dist_dir / "python"
@@ -216,8 +315,11 @@ def build(python_version: str) -> None:
         zf.extractall(python_dir)
     _log(f"Extraction terminée ({len(list(python_dir.iterdir()))} fichiers)")
 
-    # 5. Extraction DLLs Tcl/Tk depuis NuGet → python/
-    _extract_tcltk(nuget_zip_path, python_dir)
+    # 5. Copie DLLs + scripts Tcl/Tk → python/
+    if use_local_tcltk:
+        _copy_tcltk_local(TCLTK_LOCAL, python_dir)
+    else:
+        _extract_tcltk(nuget_zip_path, python_dir)
 
     # 6. Patch python3XX._pth
     _patch_pth(python_dir)
@@ -229,8 +331,8 @@ def build(python_version: str) -> None:
 
     # 8. Installation des dépendances Windows dans site-packages/ (cross-compilation)
     _log("Installation des dépendances Windows (cross-compilation depuis Linux)...")
-    pip_cmd = [
-        sys.executable, "-m", "pip", "install",
+    pip_cmd = _find_pip() + [
+        "install",
         "--platform", "win_amd64",
         "--python-version", "311",
         "--implementation", "cp",

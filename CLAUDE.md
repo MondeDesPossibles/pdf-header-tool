@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.21.03
+# Build   : build-2026.02.21.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -42,11 +42,12 @@ PDFHeaderTool/            # dossier de distribution (zippé pour livraison)
 │   ├── python.exe        # interpréteur
 │   ├── python311.dll
 │   ├── python311.zip     # stdlib Python
-│   ├── _tkinter.pyd      # bridge C Tcl/Tk (présent dans embed)
-│   ├── tcl86t.dll        # ← extrait du NuGet (fix crash tkinter)
-│   ├── tk86t.dll         # ← extrait du NuGet
-│   ├── tcl/              # ← extrait du NuGet
-│   └── tk/               # ← extrait du NuGet
+│   ├── _tkinter.pyd      # ABSENT de l'embed — copier depuis Python311\DLLs\_tkinter.pyd
+│   ├── tcl86t.dll        # copier depuis Python311\tcl86t.dll
+│   ├── tk86t.dll         # copier depuis Python311\tk86t.dll
+│   ├── tkinter/          # ABSENT de l'embed — copier depuis Python311\Lib\tkinter\
+│   └── tcl/              # copier Python311\tcl\ EN ENTIER (contient tcl8.6/ ET tk8.6/)
+│                         # _tkinter.pyd cherche TK_LIBRARY dans python/tcl/tk8.6/
 ├── site-packages/        # dépendances pré-installées (pymupdf, pillow, customtkinter)
 │                         # installées via pip cross-compilation par build_dist.py
 ├── pdf_header.py         # script principal (copie)

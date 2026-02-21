@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - lancer.bat
 :: Version : 0.4.6
-:: Build   : build-2026.02.21.04
+:: Build   : build-2026.02.21.07
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: Point d'entree Windows pour le modele portable (Python Embarque + bundle complet)
 :: Toutes les dependances sont incluses dans la distribution — aucun internet requis.
@@ -14,7 +14,7 @@ title PDF Header Tool
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_EXE=%SCRIPT_DIR%python\python.exe"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_launch.log"
-set "BUILD_ID=build-2026.02.21.04"
+set "BUILD_ID=build-2026.02.21.07"
 
 echo [%date% %time%] Lancement PDF Header Tool > "%LOG_FILE%"
 echo [%date% %time%] Build: %BUILD_ID% >> "%LOG_FILE%"
@@ -35,7 +35,7 @@ echo [%date% %time%] [OK] Python embarque detecte >> "%LOG_FILE%"
 
 :: --- Lancement de l'application ---
 echo [%date% %time%] Lancement pdf_header.py >> "%LOG_FILE%"
-"%PYTHON_EXE%" "%SCRIPT_DIR%pdf_header.py"
+"%PYTHON_EXE%" "%SCRIPT_DIR%pdf_header.py" >> "%LOG_FILE%" 2>&1
 set "APP_RESULT=%errorlevel%"
 echo [%date% %time%] Code retour application: %APP_RESULT% >> "%LOG_FILE%"
 

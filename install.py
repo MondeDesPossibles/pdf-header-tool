@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool - install.py
 # Version : 0.4.6
-# Build   : build-2026.02.21.03
+# Build   : build-2026.02.21.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Installation Windows : AppData/Local, venv, raccourcis bureau + menu demarrer
 # ==============================================================================
