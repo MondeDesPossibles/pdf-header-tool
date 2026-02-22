@@ -8,6 +8,7 @@
 VERSION     = "0.4.6.9"
 BUILD_ID    = "build-2026.02.22.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
+_RUNNING_VERSION = VERSION  # mis à jour par _apply_pending_update() si un patch est appliqué
 
 import sys
 import os
@@ -34,6 +35,7 @@ def _apply_pending_update():
     """Applique un patch téléchargé lors du lancement précédent.
     Doit être appelée avant _bootstrap() — ne lève jamais d'exception.
     """
+    global _RUNNING_VERSION
     import datetime
     def _ts():
         return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -69,6 +71,7 @@ def _apply_pending_update():
             (install_dir / "version.txt").write_text(version_file.read_text())
         shutil.rmtree(staging)
         if new_version:
+            _RUNNING_VERSION = new_version
             print(f"[{_ts()}] UPDATE_APPLY succes — version appliquee: {new_version}")
         else:
             print(f"[{_ts()}] UPDATE_APPLY succes")
@@ -339,7 +342,7 @@ def _check_update_thread():
         return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        print(f"[{_ts()}] UPDATE_CHECK version courante: {VERSION}")
+        print(f"[{_ts()}] UPDATE_CHECK version courante: {_RUNNING_VERSION}")
         # Contexte SSL : certifi si disponible (bundle inclus), sinon contexte système
         import ssl
         try:
@@ -361,7 +364,7 @@ def _check_update_thread():
 
         tag_name = release.get("tag_name", "")
         remote_version = tag_name.lstrip("v")
-        if not remote_version or remote_version == VERSION:
+        if not remote_version or remote_version == _RUNNING_VERSION:
             print(f"[{_ts()}] UPDATE_CHECK deja a jour")
             return
         print(f"[{_ts()}] UPDATE_CHECK nouvelle version disponible: {remote_version}")
@@ -381,7 +384,7 @@ def _check_update_thread():
         # 4. Vérifier si une réinstallation complète est requise
         if meta.get("requires_full_reinstall", True):
             print(f"[{_ts()}] UPDATE_CHECK reinstallation complete requise — ignore (prevu 4.7+)")
-            _debug_log(f"UPDATE_FULL_REQUIRED {VERSION} -> {remote_version}")
+            _debug_log(f"UPDATE_FULL_REQUIRED {_RUNNING_VERSION} -> {remote_version}")
             return
 
         # 5. Télécharger app-patch.zip
@@ -423,8 +426,8 @@ def _check_update_thread():
             (staging / "_delete.json").write_text(json.dumps(delete_list))
         (staging / "_target_version.txt").write_text(remote_version)
 
-        print(f"[{_ts()}] UPDATE_CHECK patch mis en attente: {VERSION} -> {remote_version} (sera applique au prochain lancement)")
-        _debug_log(f"UPDATE_STAGED {VERSION} -> {remote_version}")
+        print(f"[{_ts()}] UPDATE_CHECK patch mis en attente: {_RUNNING_VERSION} -> {remote_version} (sera applique au prochain lancement)")
+        _debug_log(f"UPDATE_STAGED {_RUNNING_VERSION} -> {remote_version}")
 
         if _update_staged_callback:
             _update_staged_callback(remote_version)
