@@ -122,6 +122,15 @@ if command -v gh &>/dev/null; then
     [[ -f "$FULL_ZIP" ]]  && UPLOAD_ARGS+=("$FULL_ZIP")
 
     if [[ ${#UPLOAD_ARGS[@]} -gt 0 ]]; then
+        # Attendre que GitHub Actions ait cree la Release (peut prendre quelques secondes)
+        echo "  Attente de la GitHub Release..."
+        for i in $(seq 1 12); do
+            if gh release view "${TAG}" &>/dev/null 2>&1; then
+                break
+            fi
+            echo "  Attente... (${i}/12)"
+            sleep 5
+        done
         gh release upload "${TAG}" "${UPLOAD_ARGS[@]}" --clobber
         echo "  Assets uploades avec succes."
     else
