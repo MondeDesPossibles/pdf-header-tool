@@ -5,7 +5,7 @@
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.4.6.2"
+VERSION     = "0.4.6.3"
 BUILD_ID    = "build-2026.02.22.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
