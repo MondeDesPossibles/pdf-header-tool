@@ -19,6 +19,11 @@ import shutil
 import tempfile
 import threading
 import datetime
+import logging
+import logging.handlers
+import uuid
+import time
+from functools import wraps
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -293,7 +298,7 @@ DEFAULT_CONFIG = {
     # Application
     "all_pages"      : True,
     "ui_font_size"   : 12,
-    "debug_enabled"  : False,
+    "log_profile"    : "simple",     # "simple" | "medium" | "full"
 }
 
 def load_config():
@@ -319,6 +324,11 @@ def load_config():
                     cfg["use_custom"]  = True
                     cfg["custom_text"] = old_cst
                 cfg.setdefault("use_filename", old_mode != "custom")
+            # Migration debug_enabled (bool) → log_profile (str) depuis v0.4.6.11
+            if "debug_enabled" in cfg and "log_profile" not in cfg:
+                cfg["log_profile"] = "medium" if cfg.pop("debug_enabled") else "simple"
+            elif "debug_enabled" in cfg:
+                cfg.pop("debug_enabled")
             return cfg
         except Exception:
             pass
@@ -333,20 +343,122 @@ def save_config(cfg):
         pass
 
 # ---------------------------------------------------------------------------
-# Logging debug (contrôlé par config "debug_enabled")
+# Système de logs multi-niveaux (Étape 4.6.3)
+# Profils : "simple" (prod) | "medium" (beta/support) | "full" (dev)
 # ---------------------------------------------------------------------------
-_DEBUG_ENABLED = False
-_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+_LOG_PROFILE = "simple"
+_APP_LOG     = INSTALL_DIR / "pdf_header_app.log"
+_ERROR_LOG   = INSTALL_DIR / "pdf_header_errors.log"
+_SESSION_ID  = uuid.uuid4().hex[:8]
 
-def _debug_log(msg: str):
-    if not _DEBUG_ENABLED:
-        return
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def _default_log_profile() -> str:
+    """Profil par défaut selon le canal de distribution."""
+    if CHANNEL == "beta":
+        return "medium"
+    return "simple"
+
+
+def _setup_logger(profile: str) -> None:
+    """Configure le logger selon le profil demandé. Peut être rappelé après chargement config."""
+    global _LOG_PROFILE
+    _LOG_PROFILE = profile
+    root = logging.getLogger("pdf_header")
+    root.handlers.clear()
+    root.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        fmt="[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # Handler app.log — INFO pour "simple", DEBUG pour "medium"/"full"
+    py_level = logging.INFO if profile == "simple" else logging.DEBUG
     try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
+        fh = logging.handlers.RotatingFileHandler(
+            str(_APP_LOG), maxBytes=1_000_000, backupCount=5, encoding="utf-8"
+        )
+        fh.setLevel(py_level)
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
     except Exception:
         pass
+
+    # Handler error.log — ERROR+ toujours actif, indépendant du profil
+    try:
+        eh = logging.handlers.RotatingFileHandler(
+            str(_ERROR_LOG), maxBytes=500_000, backupCount=3, encoding="utf-8"
+        )
+        eh.setLevel(logging.ERROR)
+        eh.setFormatter(fmt)
+        root.addHandler(eh)
+    except Exception:
+        pass
+
+    # Handler stderr uniquement en profil "full" (dev)
+    if profile == "full":
+        sh = logging.StreamHandler()
+        sh.setLevel(logging.DEBUG)
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+
+
+# Sous-loggers par domaine — réutilisables tels quels lors de la migration app/ (Étape 4.7)
+log_app    = logging.getLogger("pdf_header.app")    # lifecycle, démarrage
+log_ui     = logging.getLogger("pdf_header.ui")     # interactions utilisateur
+log_pdf    = logging.getLogger("pdf_header.pdf")    # opérations PyMuPDF
+log_update = logging.getLogger("pdf_header.update") # système de mise à jour
+log_config = logging.getLogger("pdf_header.config") # chargement/sauvegarde config
+log_font   = logging.getLogger("pdf_header.font")   # découverte des polices
+
+
+def _debug_log(msg: str, level: int = 1) -> None:
+    """Wrapper rétrocompatible. level: 1=INFO (simple+), 2=DEBUG (medium+), 3=DEBUG [VERB] (full).
+    À migrer vers les domain loggers lors du refactor 4.7.
+    """
+    if level == 1:
+        log_app.info(msg)
+    elif level == 2:
+        log_app.debug(msg)
+    else:
+        log_app.debug(f"[VERB] {msg}")
+
+
+def _log_session_start() -> None:
+    """Enregistre le contexte complet de la session — première entrée utile pour le support."""
+    import platform
+    runtime = (
+        "embedded"
+        if ("python.exe" in sys.executable.lower() or getattr(sys, "frozen", False))
+        else "system"
+    )
+    log_app.info(
+        f"APP_START session={_SESSION_ID} version={VERSION} build={BUILD_ID} "
+        f"channel={CHANNEL} profile={_LOG_PROFILE} "
+        f"os={platform.system()} {platform.release()} "
+        f"python={sys.version.split()[0]} runtime={runtime}"
+    )
+    log_app.info(f"APP_DIR install_dir={INSTALL_DIR}")
+
+
+def _global_exception_handler(exc_type, exc_value, exc_tb) -> None:
+    """Capture les exceptions non gérées — log dans error.log + message utilisateur sobre."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    log_app.critical("UNCAUGHT_EXCEPTION", exc_info=(exc_type, exc_value, exc_tb))
+    try:
+        messagebox.showerror(
+            "Erreur inattendue",
+            f"Une erreur inattendue s'est produite.\n"
+            f"Détails dans :\n{_ERROR_LOG}"
+        )
+    except Exception:
+        pass
+
+
+sys.excepthook = _global_exception_handler
+_setup_logger(_default_log_profile())
 
 # ---------------------------------------------------------------------------
 # Mise à jour automatique (depuis v0.4.6.1)
@@ -635,8 +747,8 @@ class PDFHeaderApp:
         self.idx       = 0
         self.cfg       = load_config()
 
-        global _DEBUG_ENABLED
-        _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+        _setup_logger(self.cfg.get("log_profile", _default_log_profile()))
+        _log_session_start()
 
         # État courant
         self.doc           = None
@@ -2085,6 +2197,7 @@ class PDFHeaderApp:
 def main():
     print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
     check_update()
+    log_app.info(f"APP_LAUNCH version={VERSION} build={BUILD_ID}")
 
     pdf_files = []
     if len(sys.argv) > 1:
