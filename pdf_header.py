@@ -426,6 +426,27 @@ def _debug_log(msg: str, level: int = 1) -> None:
         log_app.debug(f"[VERB] {msg}")
 
 
+def _log_timed(logger, label: str = None):
+    """Décorateur : log début + fin + elapsed_ms. Actif uniquement en medium/full (DEBUG)."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            name = label or func.__name__
+            logger.debug(f"{name} START")
+            t0 = time.perf_counter()
+            try:
+                result = func(*args, **kwargs)
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                logger.debug(f"{name} OK elapsed_ms={elapsed}")
+                return result
+            except Exception as e:
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                logger.error(f"{name} FAILED elapsed_ms={elapsed} error={e}")
+                raise
+        return wrapper
+    return decorator
+
+
 def _log_session_start() -> None:
     """Enregistre le contexte complet de la session — première entrée utile pour le support."""
     import platform
@@ -474,6 +495,7 @@ def _check_update_thread():
 
     try:
         print(f"[{_ts()}] UPDATE_CHECK version courante: {_RUNNING_VERSION}")
+        log_update.debug(f"UPDATE_CHECK_START version={_RUNNING_VERSION} channel={CHANNEL}")
         # Contexte SSL : certifi si disponible (bundle inclus), sinon contexte système
         import ssl
         try:
@@ -797,6 +819,7 @@ class PDFHeaderApp:
     def _load_system_fonts(self):
         """Charge les polices système prioritaires disponibles."""
         self._system_fonts = _find_priority_fonts()
+        log_font.debug(f"FONT_SCAN_DONE count={len(self._system_fonts)} fonts={list(self._system_fonts.keys())}")
 
     # ------------------------------------------------------------------ UI ---
 
@@ -1789,8 +1812,12 @@ class PDFHeaderApp:
         self.lbl_progress.configure(text=f"  {self.idx + 1} / {len(self.pdf_files)}  ")
         if self.doc:
             self.doc.close()
+        _t0_load = time.perf_counter()
         self.doc = fitz.open(str(path))
-        log_pdf.info(f"PDF_OPEN file={path.name} pages={len(self.doc)} idx={self.idx}")
+        log_pdf.info(
+            f"PDF_OPEN file={path.name} pages={len(self.doc)} idx={self.idx} "
+            f"elapsed_ms={int((time.perf_counter() - _t0_load) * 1000)}"
+        )
         # Lire les dims dès maintenant pour _recalc_ratio_from_preset()
         page0 = self.doc[0]
         self.page_w_pt = page0.rect.width
@@ -1806,6 +1833,7 @@ class PDFHeaderApp:
     def _render_preview(self):
         if not self.doc:
             return
+        _t0_render = time.perf_counter()
         self.canvas.update_idletasks()
         cw = max(self.canvas.winfo_width(),  10)
         ch = max(self.canvas.winfo_height(), 10)
@@ -1827,6 +1855,12 @@ class PDFHeaderApp:
             f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
             f"page_px=({pix.width}x{pix.height}) "
             f"tk_scaling={self.canvas.tk.call('tk','scaling'):.3f}"
+        )
+        log_pdf.debug(
+            f"RENDER scale={self.scale:.4f} "
+            f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
+            f"page_px=({pix.width}x{pix.height}) "
+            f"elapsed_ms={int((time.perf_counter() - _t0_render) * 1000)}"
         )
 
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
