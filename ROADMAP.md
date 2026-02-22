@@ -263,8 +263,8 @@ Ils doivent être copiés depuis une installation Windows standard dans `tcltk/`
 ---
 
 ## Étape 4.6.1 — Infrastructure de release et mise à jour automatique v2
-**Statut : En cours**
-**Version cible : v0.4.6 (infra dev — pas de bump utilisateur)**
+**Statut : Terminé ✓**
+**Version cible : v0.4.6.1**
 **Prérequis : Étape 4.6 terminée**
 
 Mettre en place un workflow de release reproductible et un mécanisme de mise à jour
