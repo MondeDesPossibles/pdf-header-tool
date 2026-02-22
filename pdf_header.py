@@ -1658,8 +1658,10 @@ class PDFHeaderApp:
     def _on_font_change(self, font_name: str):
         if font_name in self._system_fonts:
             self.cfg["font_file"] = str(self._system_fonts[font_name])
+            log_ui.debug(f"UI_FONT_CHANGE font={font_name} file={self.cfg['font_file']}")
         else:
             self.cfg["font_file"] = None
+            log_ui.debug(f"UI_FONT_CHANGE font={font_name} type=builtin")
         self._on_text_change()
 
     # --------------------------------------------------- Couleurs (picks) ---
@@ -1877,6 +1879,12 @@ class PDFHeaderApp:
     def _draw_overlay(self, hover_cx=None, hover_cy=None):
         if not hasattr(self, "canvas"):
             return
+        # Log uniquement lors des mises à jour de position (pas sur chaque hover)
+        if hover_cx is None:
+            log_ui.debug(
+                f"OVERLAY_UPDATE ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"preset={self.preset_position}"
+            )
         self.canvas.delete("overlay")
 
         # Croix de guidage au survol
@@ -1996,6 +2004,12 @@ class PDFHeaderApp:
             f"ratio=({rx:.4f},{ry:.4f}) "
             f"canvas_wh=({self.canvas.winfo_width()},{self.canvas.winfo_height()})"
         )
+        x_pt_c, y_pt_c = self._ratio_to_pdf_pt(rx, ry)
+        log_ui.debug(
+            f"UI_CLICK file={fname} "
+            f"ratio=({rx:.4f},{ry:.4f}) "
+            f"pt=({x_pt_c:.1f},{y_pt_c:.1f})"
+        )
         self._update_pos_label()
         self._draw_overlay()
 
@@ -2070,6 +2084,16 @@ class PDFHeaderApp:
                 f"APPLY [{path.name}] ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
                 f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} rotation={rotation} font={font_family}"
             )
+            log_pdf.debug(
+                f"PDF_INSERT_PARAMS file={path.name} "
+                f"text_len={len(header_text)} text_preview={header_text[:30]!r} "
+                f"font={font_family} size={font_size} bold={bold} italic={italic} "
+                f"rotation={rotation} "
+                f"click_ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"preset={self.preset_position} "
+                f"margin_x={self.cfg.get('margin_x_pt', 20.0):.1f} "
+                f"margin_y={self.cfg.get('margin_y_pt', 20.0):.1f}"
+            )
 
             for i in pages_to_process:
                 pg   = doc_out[i]
@@ -2080,7 +2104,7 @@ class PDFHeaderApp:
 
                 # Estimation largeur texte pour fond/cadre/soulignement
                 text_width = len(header_text) * font_size * SIZES["text_w_fallback"]  # fallback
-                if use_bg or use_frame or underline:
+                if use_bg or use_frame or underline or _LOG_PROFILE == "full":
                     try:
                         if "fontfile" in font_args:
                             font_obj = fitz.Font(fontfile=font_args["fontfile"])
@@ -2133,7 +2157,7 @@ class PDFHeaderApp:
                     f"fitz_y={fitz_y:.1f} text_rect={text_rect}"
                 )
 
-                pg.insert_textbox(
+                _remaining = pg.insert_textbox(
                     text_rect,
                     header_text,
                     fontsize=font_size,
@@ -2142,6 +2166,18 @@ class PDFHeaderApp:
                     lineheight=lineheight,
                     align=fitz.TEXT_ALIGN_CENTER,
                     **font_args,
+                )
+                log_pdf.debug(
+                    f"PDF_INSERT_RESULT file={path.name} page={i} "
+                    f"page_dims=({pg_w:.1f},{pg_h:.1f}) "
+                    f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} fitz_y={fitz_y:.1f} "
+                    f"text_rect=[{text_rect.x0:.1f},{text_rect.y0:.1f},"
+                    f"{text_rect.x1:.1f},{text_rect.y1:.1f}] "
+                    f"text_w_est={text_width:.1f} "
+                    f"text_h_est={font_size * lineheight:.1f} "
+                    f"truncated={_remaining < 0} remaining_chars={max(0, -int(_remaining))} "
+                    f"click_ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                    f"applied_ratio=({x_pt / pg_w:.4f},{1 - fitz_y / pg_h:.4f})"
                 )
 
                 # Soulignement — centré sur x_pt
