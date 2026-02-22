@@ -12,6 +12,7 @@ _RUNNING_VERSION = VERSION  # mis à jour par _apply_pending_update() si un patc
 
 import sys
 import os
+import subprocess
 import json
 import shutil
 import tempfile
@@ -73,6 +74,21 @@ def _apply_pending_update():
         if new_version:
             _RUNNING_VERSION = new_version
             print(f"[{_ts()}] UPDATE_APPLY succes — version appliquee: {new_version}")
+            # Redémarrer immédiatement : le patch est sur disque mais le process
+            # en cours a déjà chargé l'ancien code en mémoire. Le restart charge
+            # la nouvelle version dès ce lancement (et non au suivant).
+            print(f"[{_ts()}] UPDATE_APPLY redemarrage pour charger v{new_version}...")
+            try:
+                if sys.platform == "win32":
+                    subprocess.Popen(
+                        [sys.executable] + sys.argv,
+                        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
+                    )
+                else:
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                sys.exit(0)
+            except Exception as restart_err:
+                print(f"[{_ts()}] UPDATE_APPLY redemarrage impossible: {restart_err} — nouvelle version active au prochain lancement")
         else:
             print(f"[{_ts()}] UPDATE_APPLY succes")
     except Exception as e:
