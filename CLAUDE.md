@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.22.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -241,17 +241,26 @@ Toutes les dépendances (pymupdf, Pillow, customtkinter) et Tcl/Tk sont pré-ins
 
 **`build_dist.py` — script de build (dev-only) :**
 1. Télécharge Python Embeddable 3.11.x depuis python.org (cache `dist/`)
-2. Télécharge Python NuGet package pour extraire les DLLs Tcl/Tk (cache `dist/`)
+2. Source Tcl/Tk : dossier local `tcltk/` en priorité, NuGet en fallback
 3. Extrait Python Embedded → `python/`
-4. Copie `tcl86t.dll`, `tk86t.dll`, `tcl/`, `tk/` depuis le NuGet → `python/`
+4. Copie `_tkinter.pyd`, `tcl86t.dll`, `tk86t.dll`, `tkinter/`, `tcl/` → `python/`
    (correction du crash tkinter : Python Embedded n'inclut pas ces DLLs)
 5. Patche `python3XX._pth` : décommente `import site` + ajoute `../site-packages`
 6. Installe les dépendances Windows dans `site-packages/` via pip cross-compilation :
    `pip install --platform win_amd64 --python-version 311 --only-binary=:all: --target site-packages/ pymupdf pillow customtkinter`
 7. Copie les fichiers du projet (pdf_header.py, lancer.bat, version.txt)
-8. Crée `dist/PDFHeaderTool-vX.Y.Z.zip` (~35-45 Mo)
-- Usage : `python3 build_dist.py [--python-version 3.11.9]`
+8. Génère dans `dist/` :
+   - `PDFHeaderTool-vX.Y.Z-windows.zip` (~40 MB — dossier interne `PDFHeaderTool/`)
+   - `app-patch-vX.Y.Z.zip` (~50-300 KB — sources Python uniquement)
+   - `metadata.json` (version, flags, hashes)
+- Usage : `python3 build_dist.py [--python-version 3.11.9] [--full-reinstall]`
 - Connexion internet requise uniquement sur la machine de build (dev)
+
+**Nommage des fichiers de distribution (depuis v0.4.6.6) :**
+- Zip complet : `PDFHeaderTool-vX.Y.Z-windows.zip` (sans build ID — nom stable)
+- Dossier interne du zip : `PDFHeaderTool/` (stable — cohérent avec les mises à jour auto)
+- Patch zip : `app-patch-vX.Y.Z.zip` (avec `v` — correspond exactement au TAG git)
+- Le build ID est conservé dans le nom du dossier de travail local (`dist/PDFHeaderTool-vX.Y.Z-build-YYYY.MM.DD.NN/`) mais n'apparaît plus dans le zip livré à l'utilisateur
 
 **Pourquoi Tcl/Tk depuis NuGet :**
 Python Embedded inclut `_tkinter.pyd` mais pas les DLLs runtime (`tcl86t.dll`, `tk86t.dll`)
@@ -280,9 +289,15 @@ d'extraire ces fichiers de façon fiable depuis Linux.
 
 **Script `release.sh` (dev uniquement) :**
 ```bash
-./release.sh X.Y.Z                   # release standard (sources Python uniquement)
+./release.sh                          # auto-bump depuis version.txt (recommandé)
+./release.sh X.Y.Z                   # release avec version explicite
 ./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ ont changé
 ```
+
+Comportement `release.sh` :
+- Sans argument : lit `version.txt`, incrémente le dernier segment (ex: 0.4.6.5 → 0.4.6.6)
+- Si le tag existe déjà : menu interactif (Écraser / Bump / Annuler)
+- Attend jusqu'à 60s que GitHub Actions crée la Release avant d'uploader les assets
 
 Le script automatise dans l'ordre :
 1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`

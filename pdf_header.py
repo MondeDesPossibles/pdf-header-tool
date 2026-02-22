@@ -616,7 +616,7 @@ class PDFHeaderApp:
         self.lbl_update.pack(side="right", padx=8, pady=6)
 
     def _build_ui(self):
-        self.root.title(f"PDF Header Tool — v{VERSION}")
+        self.root.title("PDF Header Tool")
         self.root.configure(fg_color=COLORS["bg_dark"])
         self.root.minsize(SIZES["win_min_w"], SIZES["win_min_h"])
 

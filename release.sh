@@ -161,7 +161,7 @@ fi
 # 9. Upload assets vers GitHub Release
 # ------------------------------------------------------------------------------
 echo "[9/9] Upload assets..."
-PATCH_ZIP="dist/app-patch-${VERSION}.zip"
+PATCH_ZIP="dist/app-patch-${TAG}.zip"
 FULL_ZIP=$(ls dist/PDFHeaderTool-v${VERSION}-*.zip 2>/dev/null | head -1 || true)
 METADATA="dist/metadata.json"
 

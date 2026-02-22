@@ -891,6 +891,61 @@ de `lancer.bat` ou de l'app. Ce comportement est dû à l'absence de signature d
 
 ---
 
+### Launcher natif Windows (Go / Rust / C#)
+
+Un launcher natif (.exe) remplacerait `lancer.bat` pour une meilleure UX : splash screen,
+fenêtre d'erreur GUI, icône dans la barre des tâches.
+
+**Analyse (2026-02-22) :**
+
+| Critère | .bat actuel | Go (.exe) | Rust (.exe) | C# (.exe) |
+|---------|-------------|-----------|-------------|-----------|
+| SmartScreen | bloqué | bloqué sans cert | bloqué sans cert | bloqué sans cert |
+| Cross-compile Linux→Win | natif | trivial | complexe | impossible |
+| Splash screen | non | oui | oui | oui |
+| Fenêtre d'erreur GUI | non | oui | oui | oui |
+| Taille binaire | ~2 KB | ~2 MB | ~500 KB | ~60 MB (self-contained) |
+| Dépendance toolchain | aucune | Go | Rust + mingw | .NET SDK |
+
+**Conclusion :** SmartScreen n'est PAS résolu par un launcher natif — il nécessite un
+certificat de signature de code (OV/EV) quelle que soit la technologie.
+Si launcher natif : Go est le meilleur compromis (cross-compile trivial depuis Linux).
+
+**Priorité :** Post-v1.0.0. Pas de valeur ajoutée avant la signature de code.
+
+---
+
+### Distribution installable (Inno Setup / NSIS)
+
+En complément de la distribution portable (ZIP), une distribution installable permettrait :
+shortcuts Bureau/Menu Démarrer, associations de fichiers `.pdf`, désinstalleur Windows propre.
+
+**Outils envisagés (gratuits, utilisables depuis Linux) :**
+- **Inno Setup** (via Wine) — script `.iss`, génère un `.exe` installeur signable
+- **NSIS** (Nullsoft Scriptable Install System) — cross-platform, bien documenté
+
+**Priorité :** Post-v0.5.0. La distribution portable est suffisante pour les premiers utilisateurs.
+
+---
+
+### Dettes techniques (avant v0.5.0)
+
+#### Comparaison de version par chaîne (CRITIQUE avant 0.4.10)
+Dans `_check_update_thread()`, la comparaison `remote_version == VERSION` est correcte
+pour vérifier si la version est identique, mais la comparaison d'ordre implicite (si jamais
+utilisée) échouerait à `0.4.10 vs 0.4.9` (comparaison lexicographique : `"0.4.10" < "0.4.9"`).
+À corriger en utilisant `tuple(int(x) for x in v.split("."))` avant d'atteindre la v0.4.10.
+
+#### `requires_full_reinstall: true` sans notification GUI
+Si une release nécessite une réinstallation complète, le thread abandonne silencieusement.
+L'utilisateur ne voit aucun message. Prévu : notification GUI (Étape 4.7+).
+
+#### `PATCH_FILES` n'inclut pas `app/`
+Actuellement `PATCH_FILES = ["pdf_header.py", "version.txt"]`. À mettre à jour dès
+que le package `app/` sera créé (Étape 4.7) pour inclure `app/**/*.py`.
+
+---
+
 ## Conventions pour chaque étape
 
 1. Avant v0.4.7 : modifier `pdf_header.py`. À partir de v0.4.7 : modifier le module concerné dans `app/`

@@ -272,9 +272,9 @@ def build(python_version: str, full_reinstall: bool = False) -> None:
     else:
         project_version = "0.4.6"
 
-    dist_name = f"PDFHeaderTool-v{project_version}-{BUILD_ID}"
+    dist_name = f"PDFHeaderTool-v{project_version}-{BUILD_ID}"  # nom du dossier local de build
     dist_dir  = DIST_BASE / dist_name
-    zip_path  = DIST_BASE / f"{dist_name}.zip"
+    zip_path  = DIST_BASE / f"PDFHeaderTool-v{project_version}-windows.zip"
 
     print(f"\n{'=' * 60}")
     print(f"  Build distribution : {dist_name}")
@@ -379,7 +379,7 @@ def build(python_version: str, full_reinstall: bool = False) -> None:
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for file in sorted(dist_dir.rglob("*")):
             if file.is_file():
-                arcname = Path(dist_name) / file.relative_to(dist_dir)
+                arcname = Path("PDFHeaderTool") / file.relative_to(dist_dir)
                 zf.write(file, arcname)
 
     zip_size_mb = zip_path.stat().st_size / 1024 / 1024
