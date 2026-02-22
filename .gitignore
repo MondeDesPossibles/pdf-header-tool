@@ -7,7 +7,7 @@ dist/python-*.zip
 # Copier depuis une install Python 3.11.x Windows : tcl86t.dll, tk86t.dll, tcl/
 tcltk/
 
-.claude/settings.json
+.claude/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
