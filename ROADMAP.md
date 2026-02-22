@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
-# Version : 0.4.0
-# Build   : build-2026.02.21.01
+# Version : 0.4.6
+# Build   : build-2026.02.21.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -183,8 +183,8 @@ Refonte complète de la section "Texte de l'en-tête" dans la sidebar.
 ---
 
 ## Étape 4.5 — Centralisation des constantes et valeurs en dur
-**Statut : À faire — dépend de l'Étape 4**
-**Version cible : 0.4.5**
+**Statut : Terminé ✓**
+**Version livrée : 0.4.5**
 
 Objectif : améliorer la lisibilité et la maintenabilité de `pdf_header.py` sans changer
 le comportement ni la structure des fichiers. Zéro risque de régression.
@@ -206,65 +206,152 @@ le comportement ni la structure des fichiers. Zéro risque de régression.
 
 ---
 
-## Étape 4.6 — Distribution Python Embarqué (Windows, zero-install)
-**Statut : À faire — dépend de l'Étape 4.5**
-**Version cible : 0.4.6**
+## Étape 4.6 — Distribution Windows portable, bundle complet (zero-install, offline)
+**Statut : Terminé ✓**
+**Version livrée : 0.4.6**
 
-Passer d'un modèle "installer Python sur le système" à un modèle "portable" :
-l'utilisateur dézipe et double-clique. Aucun Python système requis sur Windows.
+Distribution Windows entièrement auto-contenue : Python Embarqué + Tcl/Tk + toutes les
+dépendances pré-installées. L'utilisateur dézipe et double-clique. Aucun internet requis.
 
-### Nouvelle structure de distribution
+### Structure de distribution réelle (bundle complet pré-installé)
 ```
-PDFHeaderTool/
-├── python/                    # Python Embeddable Package (python-3.11.x-embed-amd64)
+PDFHeaderTool-vX.Y.Z-build-YYYY.MM.DD.NN/
+├── python/                    # Python Embeddable 3.11.x
 │   ├── python.exe
 │   ├── python311.dll
-│   ├── python311._pth         # modifié : "import site" décommenté
-│   └── ...
-├── site-packages/             # dépendances pip installées ici au premier lancement
-├── get-pip.py                 # bundlé dans l'archive — pas de téléchargement requis
-├── pdf_header.py              # script principal (inchangé)
+│   ├── python311.zip          # stdlib Python (sans tkinter ni _tkinter)
+│   ├── python311._pth         # patché : "import site" + "../site-packages"
+│   ├── _tkinter.pyd           # pont C Tcl/Tk (absent de l'embed — ajouté par build_dist.py)
+│   ├── tcl86t.dll             # runtime Tcl
+│   ├── tk86t.dll              # runtime Tk
+│   ├── tkinter/               # module Python tkinter (absent de python311.zip — ajouté)
+│   └── tcl/                   # scripts Tcl + Tk (tcl8.6/ ET tk8.6/ côte à côte)
+├── site-packages/             # dépendances pré-installées (pymupdf, pillow, customtkinter)
+├── pdf_header.py              # script principal
 ├── version.txt
-├── lancer.bat                 # point d'entrée utilisateur (double-clic)
-└── setup.bat                  # installation silencieuse des dépendances (1er lancement)
+└── lancer.bat                 # double-clic → lance directement (aucune install requise)
 ```
 
-### lancer.bat — comportement
+### lancer.bat — comportement réel
 1. Active UTF-8 (`chcp 65001`)
 2. Vérifie la présence de `python\python.exe` (sanity check)
-3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` en attente
-4. Lance `python\python.exe pdf_header.py`
-5. Log dans `pdf_header_launch.log`
+3. Lance `python\python.exe pdf_header.py` → stdout+stderr redirigés dans `pdf_header_launch.log`
+4. Log du code retour dans `pdf_header_launch.log`
 
-### setup.bat — comportement
-1. Installe pip via `get-pip.py` bundlé :
-   `python\python.exe get-pip.py --no-warn-script-location`
-2. Installe les dépendances dans `site-packages\` :
-   `python\python.exe -m pip install --target=site-packages pymupdf pillow customtkinter`
-3. Log complet dans `pdf_header_install.log`
+### build_dist.py — script de build (dev only, Linux)
+1. Télécharge Python Embeddable 3.11.x depuis python.org (cache `dist/`)
+2. Source Tcl/Tk : dossier local `tcltk/` en priorité, NuGet en fallback
+3. Extrait Python Embedded → `python/`
+4. Copie `_tkinter.pyd`, `tcl86t.dll`, `tk86t.dll`, `tkinter/`, `tcl/` → `python/`
+5. Patche `python311._pth`
+6. Installe les dépendances Windows via pip cross-compilation → `site-packages/`
+7. Copie les fichiers du projet
+8. Crée `dist/PDFHeaderTool-vX.Y.Z-build-YYYY.MM.DD.NN.zip`
+
+**Point critique Tcl/Tk :** `_tkinter.pyd` et `tkinter/` sont absents du Python Embedded officiel.
+Ils doivent être copiés depuis une installation Windows standard dans `tcltk/` (non versionné).
+`tcltk/tcl/` doit être copié en entier : `_tkinter.pyd` cherche `TK_LIBRARY` dans `python/tcl/tk8.6/`.
 
 ### pdf_header.py — changements
-- `_get_install_dir()` : retourne `Path(__file__).parent` dans tous les cas
-  (plus de `%LOCALAPPDATA%` — l'app est portable USB/réseau)
-- `_bootstrap()` : devient un no-op (vérifie uniquement que les imports fonctionnent)
-
-### Script de build (repo, dev only)
-- `build_dist.py` : télécharge Python embed, copie les fichiers, crée le zip de distribution
-- `get-pip.py` bundlé dans le repo (source : https://bootstrap.pypa.io/get-pip.py)
+- `_get_install_dir()` : retourne `Path(__file__).parent` dans tous les cas (portable USB/réseau)
+- `_bootstrap()` : vérifie uniquement que fitz, customtkinter, PIL sont importables
 
 ### Linux (inchangé)
-- Python système utilisé directement
-- Lancement via `python3 pdf_header.py` ou script `lancer.sh`
+- Python système utilisé directement, lancement via `python3 pdf_header.py`
 - Dépendances installées manuellement : `pip install pymupdf pillow customtkinter`
 
-### Mise à jour `CLAUDE.md`
-- Remplacer la section `install.bat` par la nouvelle section Distribution
-- Mettre à jour `INSTALL_DIR` dans la description des constantes
+---
+
+## Étape 4.6.1 — Infrastructure de release et mise à jour automatique v2
+**Statut : En cours**
+**Version cible : v0.4.6 (infra dev — pas de bump utilisateur)**
+**Prérequis : Étape 4.6 terminée**
+
+Mettre en place un workflow de release reproductible et un mécanisme de mise à jour
+robuste, compatible avec l'architecture multi-fichiers de l'étape 4.7.
+
+### Problème résolu
+
+L'ancien `check_update()` lisait depuis la branche `main` et ne téléchargeait que
+`pdf_header.py`. Ces deux comportements sont incorrects et incompatibles avec 4.7 :
+- Lire depuis `main` signifie qu'un commit en cours de travail peut déclencher une MAJ
+- Un seul fichier ne fonctionnera plus quand l'app sera découpée en `app/*.py`
+
+### Stratégie choisie : manifest JSON + patch zip
+
+Chaque release GitHub publie 3 assets :
+```
+PDFHeaderTool-vX.Y.Z-windows.zip     (~40 MB — installation fraîche)
+app-patch-vX.Y.Z.zip                 (~50-300 KB — sources Python uniquement)
+metadata.json                        (version, flags, hashes)
+```
+
+### Format metadata.json
+
+```json
+{
+  "manifest_version": 1,
+  "version": "0.4.7",
+  "requires_full_reinstall": false,
+  "patch_zip": {
+    "name": "app-patch-v0.4.7.zip",
+    "sha256": "...",
+    "size": 180000
+  },
+  "delete": []
+}
+```
+
+- `requires_full_reinstall: true` si `site-packages/` ou `python/` changent
+- `delete` liste les fichiers à supprimer (ex : module renommé entre deux versions)
+- `patch_zip` contient uniquement les fichiers sources modifiés
+
+### Logique de mise à jour dans l'app (au démarrage)
+
+1. `_apply_pending_update()` s'exécute en premier — applique un patch téléchargé lors
+   du lancement précédent (si `_update_pending/` existe)
+2. `check_update()` tourne en thread daemon :
+   - Interroge GitHub Releases API → dernière release stable
+   - Si même version → rien
+   - Si nouvelle version → télécharge `metadata.json` depuis les assets
+   - Si `requires_full_reinstall: true` → log (futur : notification GUI Étape 4.7+)
+   - Sinon → télécharge `app-patch.zip`, vérifie SHA256, extrait dans `_update_pending/`
+3. Au **prochain démarrage**, `_apply_pending_update()` déplace les fichiers en place
+   et supprime les fichiers listés dans `delete`
+
+Ce mécanisme en deux temps évite tout problème de fichiers verrouillés sous Windows.
+
+### Workflow développeur (release.sh)
+
+```bash
+./release.sh X.Y.Z              # release standard (sources uniquement)
+./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ changent
+```
+
+`release.sh` automatise :
+1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`
+2. Mise à jour `BUILD_ID` (date du jour)
+3. Validation syntaxe Python (`ast.parse`)
+4. `git commit + tag vX.Y.Z + push`
+5. `python3 build_dist.py` → génère le zip + `metadata.json` + `app-patch-vX.Y.Z.zip`
+6. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
+
+### GitHub Actions (.github/workflows/release.yml)
+
+Déclenché sur push tag `v*.*.*`. Crée automatiquement la GitHub Release avec les
+release notes générées depuis les commits. Le build et l'upload des assets sont
+gérés localement via `release.sh` (le dossier `tcltk/` n'est pas disponible sur CI).
+
+### Changements dans build_dist.py
+
+- Génère `metadata.json` avec version, `requires_full_reinstall`, hash SHA256 du patch zip
+- Génère `app-patch-vX.Y.Z.zip` contenant uniquement les fichiers `.py` du projet
+- Argument CLI `--full-reinstall` pour forcer `requires_full_reinstall: true`
 
 ---
 
 ## Étape 4.7 — Découpage modulaire (multi-fichiers)
-**Statut : À faire — dépend de l'Étape 4.6**
+**Statut : À faire — dépend de l'Étape 4.6.1**
 **Version cible : 0.4.7**
 **Prérequis : structure Python Embarqué en place (Étape 4.6)**
 
@@ -785,24 +872,27 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
 
 ## Conventions pour chaque étape
 
-1. Modifier `pdf_header.py` uniquement (sauf si la dépendance touche `install.py`)
-2. Incrémenter `VERSION` dans le script et `version.txt`
-3. Vérifier syntaxe :
+1. Avant v0.4.7 : modifier `pdf_header.py`. À partir de v0.4.7 : modifier le module concerné dans `app/`
+2. Vérifier syntaxe :
    ```bash
    python3 -c "import ast; ast.parse(open('pdf_header.py').read())"
    ```
-4. Tester sur Windows avant de merger
-5. Mettre à jour `CLAUDE.md` si l'architecture change
-6. Marquer l'étape comme **Statut : Terminé ✓** dans ce fichier
-7. Commiter avec un message clair :
+3. Tester sur Windows avant de merger
+4. Mettre à jour `CLAUDE.md` si l'architecture change
+5. Marquer l'étape comme **Statut : Terminé ✓** dans ce fichier
+6. Workflow de release (depuis v0.4.6.1) :
    ```bash
-   git add .
-   git commit -m "feat: étape X — description"
-   git tag vX.Y.Z
-   git push && git push origin vX.Y.Z
+   # 1. Créer une branche dédiée
+   git checkout -b feat/step-X.Y
+   # 2. Travailler, committer
+   # 3. Merger dans main
+   git checkout main && git merge feat/step-X.Y
+   # 4. Lancer le script de release (bump version + build + tag + push + upload)
+   ./release.sh X.Y.Z
+   # Si site-packages/ ou python/ ont changé :
+   ./release.sh X.Y.Z --full-reinstall
    ```
-8. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
-9. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
-10. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `install.py`, `install.bat`,
-    `README.md`, `CLAUDE.md`, `ROADMAP.md`.
-11. Vérifier que ce build apparaît dans les logs runtime (`install.bat`, `install.py`, `pdf_header.py`).
+7. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
+8. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
+9. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `README.md`, `CLAUDE.md`, `ROADMAP.md`.
+10. Vérifier que ce build apparaît dans les logs runtime (`pdf_header.py`).

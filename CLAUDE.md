@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
-# Version : 0.4.0
-# Build   : build-2026.02.21.01
+# Version : 0.4.6
+# Build   : build-2026.02.21.07
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -17,20 +17,45 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 
 ## Architecture
 
-### Actuelle (v0.4.x — fichier unique)
+### Actuelle (v0.4.6 — fichier unique + distribution portable)
 
 ```
-pdf-header-tool/
-├── pdf_header.py     # Script principal — toute la logique est ici
-├── install.py        # Installateur Windows (AppData, venv, raccourcis)
-├── install.bat       # Wrapper bat : vérifie Python, ouvre python.org si absent/Store, lance install.py
-├── version.txt       # Numéro de version (ex: 0.0.1) — lu par le système de MAJ
-├── ROADMAP.md        # Évolutions prévues, à lire avant toute modification
-├── CLAUDE.md         # Ce fichier
-└── README.md         # Documentation utilisateur
+pdf-header-tool/          # repo git
+├── pdf_header.py         # Script principal — toute la logique est ici
+├── install.py            # Installateur Windows legacy (non utilisé en v0.4.6+)
+├── install.bat           # Wrapper bat legacy (non utilisé en v0.4.6+)
+├── lancer.bat            # Point d'entrée Windows portable (double-clic)
+├── setup.bat             # Installation dépendances au premier lancement
+├── build_dist.py         # Script de build distribution (dev-only)
+├── get-pip.py            # Bundlé localement — NON commité (voir .gitignore)
+├── version.txt           # Numéro de version — lu par le système de MAJ
+├── ROADMAP.md            # Évolutions prévues, à lire avant toute modification
+├── CLAUDE.md             # Ce fichier
+└── README.md             # Documentation utilisateur
 ```
 
-### Cible (à partir de v0.4.6 / v0.4.7 — distribution portable + package)
+Distribution Windows générée par `build_dist.py` (bundle complet, offline) :
+
+```
+PDFHeaderTool/            # dossier de distribution (zippé pour livraison)
+├── python/               # Python Embeddable 3.11.x (python3XX._pth patché)
+│   ├── python.exe        # interpréteur
+│   ├── python311.dll
+│   ├── python311.zip     # stdlib Python
+│   ├── _tkinter.pyd      # ABSENT de l'embed — copier depuis Python311\DLLs\_tkinter.pyd
+│   ├── tcl86t.dll        # copier depuis Python311\tcl86t.dll
+│   ├── tk86t.dll         # copier depuis Python311\tk86t.dll
+│   ├── tkinter/          # ABSENT de l'embed — copier depuis Python311\Lib\tkinter\
+│   └── tcl/              # copier Python311\tcl\ EN ENTIER (contient tcl8.6/ ET tk8.6/)
+│                         # _tkinter.pyd cherche TK_LIBRARY dans python/tcl/tk8.6/
+├── site-packages/        # dépendances pré-installées (pymupdf, pillow, customtkinter)
+│                         # installées via pip cross-compilation par build_dist.py
+├── pdf_header.py         # script principal (copie)
+├── version.txt
+└── lancer.bat            # double-clic pour lancer → app démarre directement
+```
+
+### Cible (à partir de v0.4.7 — distribution portable + package)
 
 Distribution portable Windows — aucun Python système requis :
 
@@ -64,17 +89,27 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 
 ## pdf_header.py — Structure interne
 
-### Bootstrap (lignes ~20-60)
-- `_get_install_dir()` : retourne `%LOCALAPPDATA%/PDFHeaderTool` sur Windows, dossier du script sur Linux
-- `_bootstrap()` : crée le venv dans `install_dir/.venv/`, installe les dépendances, se relance dans le venv
+### Bootstrap (lignes ~20-50)
+- `_get_install_dir()` : retourne `Path(__file__).parent` (portable, identique Windows et Linux depuis v0.4.6)
+- `_bootstrap()` : vérifie que fitz, customtkinter et PIL sont importables — affiche un message d'erreur et quitte si une dépendance est manquante (plus de création de venv depuis v0.4.6)
 
-### Mise à jour automatique (lignes ~80-110)
-- `check_update()` : thread daemon qui compare `version.txt` local vs GitHub raw
-- Repo : `MondeDesPossibles/pdf-header-tool`
-- Constante `VERSION` en tête du script + `GITHUB_REPO`
-- Mise à jour silencieuse : télécharge le nouveau `pdf_header.py` et remplace le fichier courant
+### Mise à jour automatique (depuis v0.4.6.1)
+- `_apply_pending_update()` : s'exécute **avant** `_bootstrap()` au démarrage — applique un patch
+  téléchargé lors du lancement précédent (déplace les fichiers de `_update_pending/` vers leur destination)
+- `check_update()` : thread daemon (non bloquant) lancé au démarrage
+- Repo : `MondeDesPossibles/pdf-header-tool` — constante `GITHUB_REPO`
+- Interroge l'**API GitHub Releases** (`/releases/latest`) — jamais depuis `main`
+- Si nouvelle version : télécharge `metadata.json` depuis les assets de la release
+- Si `requires_full_reinstall: false` : télécharge `app-patch.zip`, vérifie SHA256,
+  extrait dans `_update_pending/` → sera appliqué au **prochain démarrage**
+- Si `requires_full_reinstall: true` : log uniquement (futur : notification GUI Étape 4.7+)
+- Champ `delete` du manifest : fichiers à supprimer lors de l'application (renommages entre versions)
+- Tout échec réseau est silencieux — ne jamais bloquer le démarrage de l'app
 
-### Constantes et fonctions module-level (v0.4.0)
+### Constantes et fonctions module-level (v0.4.5)
+- `COLORS` : dict de toutes les couleurs hex de l'UI (arrière-plans, texte, accents, états cartes, overlay)
+- `SIZES` : dict de toutes les dimensions, espacements et constantes numériques de l'UI (fenêtre, panneaux, canvas, overlay, limites config)
+- `TIMINGS` : dict des délais réseau (`update_version_timeout`, `update_download_timeout`)
 - `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
 - `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
 - `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
@@ -193,51 +228,93 @@ _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
 
 ## Distribution et lancement
 
-### Modèle actuel (v0.4.x) — install.bat + venv système
+### Modèle actuel (v0.4.6+) — bundle complet offline
 
-**Fonctionnement général :**
-1. Active UTF-8 (`chcp 65001`) pour éviter les problèmes d'encodage en console Windows
-2. Crée immédiatement un fichier log : `<dossier_install>\pdf_header_install.log`
-3. Vérifie Python simplement avec `python --version`
-4. Si Python absent : ouvre `https://www.python.org/downloads/` et demande une installation manuelle
-5. Si Python Microsoft Store détecté : stoppe l'installation et redirige aussi vers `python.org`
-6. Lance `install.py` une fois un Python standard détecté
-7. Ferme automatiquement en cas de succès (pause uniquement en cas d'erreur)
+L'utilisateur dézipe et double-clique sur `lancer.bat`. Aucun Python, aucun internet requis.
+Toutes les dépendances (pymupdf, Pillow, customtkinter) et Tcl/Tk sont pré-installées dans le zip.
 
-**Points d'attention pour toute modification de install.bat :**
+**`lancer.bat` — point d'entrée utilisateur :**
+1. Active UTF-8 (`chcp 65001`)
+2. Vérifie la présence de `python\python.exe` (sanity check)
+3. Lance `python\python.exe pdf_header.py` directement
+4. Log dans `pdf_header_launch.log`
+
+**`build_dist.py` — script de build (dev-only) :**
+1. Télécharge Python Embeddable 3.11.x depuis python.org (cache `dist/`)
+2. Télécharge Python NuGet package pour extraire les DLLs Tcl/Tk (cache `dist/`)
+3. Extrait Python Embedded → `python/`
+4. Copie `tcl86t.dll`, `tk86t.dll`, `tcl/`, `tk/` depuis le NuGet → `python/`
+   (correction du crash tkinter : Python Embedded n'inclut pas ces DLLs)
+5. Patche `python3XX._pth` : décommente `import site` + ajoute `../site-packages`
+6. Installe les dépendances Windows dans `site-packages/` via pip cross-compilation :
+   `pip install --platform win_amd64 --python-version 311 --only-binary=:all: --target site-packages/ pymupdf pillow customtkinter`
+7. Copie les fichiers du projet (pdf_header.py, lancer.bat, version.txt)
+8. Crée `dist/PDFHeaderTool-vX.Y.Z.zip` (~35-45 Mo)
+- Usage : `python3 build_dist.py [--python-version 3.11.9]`
+- Connexion internet requise uniquement sur la machine de build (dev)
+
+**Pourquoi Tcl/Tk depuis NuGet :**
+Python Embedded inclut `_tkinter.pyd` mais pas les DLLs runtime (`tcl86t.dll`, `tk86t.dll`)
+ni les bibliothèques de scripts (`tcl/`, `tk/`). Sans ces fichiers, `import tkinter` échoue
+avec exit code 1. Le NuGet Python (.nupkg = ZIP) contient l'installation complète et permet
+d'extraire ces fichiers de façon fiable depuis Linux.
+
+**`_get_install_dir()` :**
+- Retourne `Path(__file__).parent` dans tous les cas (Windows et Linux — portable USB/réseau)
+
+**`_bootstrap()` :**
+- Vérifie que fitz, customtkinter, PIL sont importables — message d'erreur clair si absent
+- Sur Windows : dépendances dans `site-packages/` (pré-installées par build_dist.py)
+- Sur Linux : dépendances installées manuellement via `pip install pymupdf Pillow customtkinter`
+
+**Points d'attention pour toute modification des .bat :**
 - Ne jamais utiliser de caractères Unicode dans les `echo` — risque d'encodage même avec `chcp 65001`
 - Toujours logger avant ET après chaque opération critique
-- La variable `PYTHON_CMD` doit être définie avant `:run_installer`
-- Cible d'installation actuelle : `%LOCALAPPDATA%\\PDFHeaderTool`
+- `python\python3XX._pth` doit avoir `import site` décommenté et `../site-packages` présent
 
-### Modèle cible (à partir de l'Étape 4.6) — Python Embarqué portable
+**`setup.bat` et `get-pip.py` :**
+- Conservés dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
+- Ne font PAS partie de la distribution zip (plus nécessaires depuis le bundle complet)
 
-L'objectif est de supprimer toute dépendance à un Python système sur Windows.
-L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Rien d'autre.
+### Workflow de release (depuis v0.4.6.1)
 
-**`lancer.bat` — nouveau rôle :**
-1. Active UTF-8 (`chcp 65001`)
-2. Vérifie la présence de `python\python.exe`
-3. Si `site-packages\fitz\__init__.py` absent : appelle `setup.bat` et attend
-4. Lance `python\python.exe pdf_header.py`
-5. Log dans `pdf_header_launch.log`
+**Script `release.sh` (dev uniquement) :**
+```bash
+./release.sh X.Y.Z                   # release standard (sources Python uniquement)
+./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ ont changé
+```
 
-**`setup.bat` — installation premier lancement (remplace install.bat + install.py) :**
-1. Installe pip via `get-pip.py` bundlé (pas de téléchargement)
-2. Installe les dépendances dans `site-packages\` via pip `--target`
-3. Log complet dans `pdf_header_install.log`
+Le script automatise dans l'ordre :
+1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`
+2. Mise à jour `BUILD_ID` (format `build-YYYY.MM.DD.NN`)
+3. Validation syntaxe Python (`ast.parse`)
+4. `git commit + tag vX.Y.Z + push origin main + push origin vX.Y.Z`
+5. `python3 build_dist.py` → génère dans `dist/` :
+   - `PDFHeaderTool-vX.Y.Z-windows.zip` (~40 MB — installation fraîche)
+   - `app-patch-vX.Y.Z.zip` (~50-300 KB — sources Python uniquement)
+   - `metadata.json` (version, flags, hashes)
+6. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
 
-**`_get_install_dir()` cible :**
-- Retourne `Path(__file__).parent` dans tous les cas (portable, plus de `%LOCALAPPDATA%`)
+**Format `metadata.json` (asset de chaque GitHub Release) :**
+```json
+{
+  "manifest_version": 1,
+  "version": "X.Y.Z",
+  "requires_full_reinstall": false,
+  "patch_zip": {"name": "app-patch-vX.Y.Z.zip", "sha256": "...", "size": 0},
+  "delete": []
+}
+```
 
-**`_bootstrap()` cible :**
-- Devient un no-op (supprimé ou réduit à un `try: import fitz` de vérification)
+**GitHub Actions (`.github/workflows/release.yml`) :**
+- Déclenché sur push tag `v*.*.*`
+- Crée la GitHub Release avec release notes auto-générées depuis les commits
+- Pas de build sur CI (tcltk/ non versionné → build via release.sh en local)
 
-**Points d'attention pour toute modification (modèle cible) :**
-- Ne jamais utiliser de caractères Unicode dans les `echo`
-- Toujours logger avant ET après chaque opération critique
-- `python\python311._pth` doit avoir `import site` décommenté et `../site-packages` présent
-- Tester sur machine sans Python ET sur machine avec Python ancien ou Store
+### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
+
+Les fichiers `install.bat` et `install.py` sont conservés dans le repo pour référence
+mais ne sont plus utilisés à partir de v0.4.6.
 
 ---
 
@@ -304,19 +381,17 @@ L'utilisateur dézipe l'archive et double-clique sur `lancer.bat`. Rien d'autre.
 - **Jamais appeler une méthode** qui dépend d'un widget avant que ce widget soit créé dans `_build_ui()`
 - Vérifier que les widgets mixtes `tkinter` + `customtkinter` sont compatibles
 
-### 5. Versioning
+### 5. Versioning et release
 
-- **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
-- **Mettre à jour `version.txt`** en même temps
 - **Format obligatoire du build global** : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`)
-- **À chaque itération**, incrémenter ce build global sur **tous** les fichiers de référence :
-  `pdf_header.py`, `install.py`, `install.bat`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
-- Conserver ce build visible dans les logs runtime (`Build install.bat: ...`, `install.py version: ...`, `pdf_header.py build ...`)
+- **À chaque itération**, incrémenter ce build global sur : `pdf_header.py`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
+- Conserver ce build visible dans les logs runtime (`pdf_header.py build ...`)
 - **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
-- Rappeler à l'utilisateur de créer le tag git correspondant :
+- **Ne jamais créer de tag git manuellement** — utiliser `release.sh` qui gère tout :
   ```bash
-  git tag vX.Y.Z && git push origin vX.Y.Z
+  ./release.sh X.Y.Z
   ```
+- Passer `--full-reinstall` si `site-packages/` ou `python/` ont changé dans cette version
 
 ### 6. Ce que Claude Code ne doit JAMAIS faire
 
