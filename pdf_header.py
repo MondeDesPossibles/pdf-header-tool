@@ -386,8 +386,13 @@ def _check_update_thread():
 
         _debug_log(f"UPDATE_STAGED {VERSION} -> {remote_version}")
 
+        if _update_staged_callback:
+            _update_staged_callback(remote_version)
+
     except Exception:
         pass  # Réseau indisponible ou release malformée — silencieux
+
+_update_staged_callback = None  # callable(version: str) | None — défini par PDFHeaderApp
 
 def check_update():
     t = threading.Thread(target=_check_update_thread, daemon=True)
@@ -587,6 +592,9 @@ class PDFHeaderApp:
         self._build_ui()
         self.root.update_idletasks()
 
+        global _update_staged_callback
+        _update_staged_callback = lambda v: self.root.after(0, lambda: self._show_update_notice(v))
+
         if self.pdf_files:
             self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
             self._populate_file_panel()
@@ -602,8 +610,13 @@ class PDFHeaderApp:
 
     # ------------------------------------------------------------------ UI ---
 
+    def _show_update_notice(self, version: str):
+        """Affiche un badge dans la topbar quand un patch est stagé et prêt."""
+        self.lbl_update.configure(text=f"  Mise a jour v{version} disponible — relancez l'app  ")
+        self.lbl_update.pack(side="right", padx=8, pady=6)
+
     def _build_ui(self):
-        self.root.title("PDF Header Tool")
+        self.root.title(f"PDF Header Tool — v{VERSION}")
         self.root.configure(fg_color=COLORS["bg_dark"])
         self.root.minsize(SIZES["win_min_w"], SIZES["win_min_h"])
 
@@ -615,6 +628,15 @@ class PDFHeaderApp:
         ctk.CTkLabel(topbar, text="PDF HEADER TOOL",
                      fg_color="transparent", text_color=COLORS["accent_red"],
                      font=("Courier New", 14, "bold")).pack(side="left", padx=14)
+
+        ctk.CTkLabel(topbar, text=f"v{VERSION}",
+                     fg_color="transparent", text_color=COLORS["text_secondary"],
+                     font=("Courier New", 11)).pack(side="left", padx=(0, 10))
+
+        self.lbl_update = ctk.CTkLabel(topbar, text="",
+                                       fg_color=COLORS["badge_bg"], text_color=COLORS["accent_red"],
+                                       font=("Courier New", 11), corner_radius=4)
+        # Pas de pack() ici — affiché par _show_update_notice() si mise à jour disponible
 
         self.lbl_filename = ctk.CTkLabel(topbar, text="",
                                          fg_color=COLORS["badge_bg"], text_color=COLORS["accent_blue"],

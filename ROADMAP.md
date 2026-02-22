@@ -870,6 +870,27 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
 
 ---
 
+## Backlog — Points à traiter (sans étape fixée)
+
+### Signature de code Windows (SmartScreen)
+Depuis v0.4.6.1, Windows affiche une boîte de dialogue "Éditeur inconnu" au premier lancement
+de `lancer.bat` ou de l'app. Ce comportement est dû à l'absence de signature de code (Code Signing).
+
+**Causes :** L'exécutable et les scripts non signés → Windows SmartScreen les bloque par défaut.
+
+**Solutions possibles (par ordre de complexité) :**
+1. **Certificat OV/EV auto-signé ou payant** (Sectigo, DigiCert ~150-500 €/an) — supprime totalement
+   la boîte de dialogue SmartScreen
+2. **Signpathio.org** (certificat open source gratuit, pour projets open source) — à évaluer
+3. **Compiler en `.exe` avec PyInstaller + signer l'exe** — plus complexe mais meilleure UX
+4. **Information utilisateur dans le README** — solution court terme : documenter que le message
+   est normal et expliquer comment le contourner ("Plus d'informations → Exécuter quand même")
+
+**Priorité :** Basse pour l'instant. À traiter avant la v1.0.0 (ou si demande utilisateur forte).
+**Impact :** Uniquement Windows. Linux non concerné.
+
+---
+
 ## Conventions pour chaque étape
 
 1. Avant v0.4.7 : modifier `pdf_header.py`. À partir de v0.4.7 : modifier le module concerné dans `app/`
