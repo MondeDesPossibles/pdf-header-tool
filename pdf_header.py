@@ -8,7 +8,8 @@
 VERSION     = "0.4.6.10"
 BUILD_ID    = "build-2026.02.22.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
-_RUNNING_VERSION = VERSION  # mis à jour par _apply_pending_update() si un patch est appliqué
+CHANNEL     = "release"      # "release" | "beta" — détermine le canal de mise à jour
+_RUNNING_VERSION = VERSION   # mis à jour par _apply_pending_update() si un patch est appliqué
 
 import sys
 import os
@@ -369,14 +370,26 @@ def _check_update_thread():
             ssl_ctx = ssl.create_default_context()
             print(f"[{_ts()}] UPDATE_CHECK SSL: contexte systeme (certifi absent)")
 
-        # 1. Dernière release stable via GitHub Releases API
-        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        # 1. Dernière release via GitHub Releases API (selon le canal)
+        #    "release" → /releases/latest  (stable uniquement, ignore les pre-releases)
+        #    "beta"    → /releases          (toutes releases, pre-releases incluses)
+        print(f"[{_ts()}] UPDATE_CHECK canal: {CHANNEL}")
+        if CHANNEL == "beta":
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+        else:
+            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         req = urllib.request.Request(
             api_url,
             headers={"User-Agent": "PDFHeaderTool", "Accept": "application/vnd.github+json"}
         )
         with urllib.request.urlopen(req, timeout=TIMINGS["update_version_timeout"], context=ssl_ctx) as r:
-            release = json.loads(r.read().decode())
+            data = json.loads(r.read().decode())
+
+        # Canal beta : data est une liste → prendre la première (la plus récente)
+        # Canal release : data est l'objet release directement
+        release = data[0] if CHANNEL == "beta" and isinstance(data, list) else data
+        if not release:
+            return
 
         tag_name = release.get("tag_name", "")
         remote_version = tag_name.lstrip("v")

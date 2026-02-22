@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # PDF Header Tool — release.sh
-# Usage : ./release.sh [X.Y.Z] [--full-reinstall]
+# Usage : ./release.sh [X.Y.Z[-beta.N]] [--full-reinstall] [--beta]
 #         Sans version : auto-bump depuis version.txt
 # Prérequis : gh CLI (sudo pacman -S github-cli && gh auth login)
 # ==============================================================================
@@ -14,43 +14,82 @@ cd "$SCRIPT_DIR"
 # Helpers
 # ------------------------------------------------------------------------------
 _bump_patch() {
-    # Incrémente le dernier segment : 0.4.6.3 -> 0.4.6.4 / 0.4.7 -> 0.4.8
+    # Incrémente le dernier segment numérique : 0.4.6.3 -> 0.4.6.4 / 0.4.7 -> 0.4.8
     echo "$1" | awk -F. -v OFS=. '{$NF=$NF+1; print}'
+}
+
+_bump_beta() {
+    # Incrémente le N dans X.Y.Z-beta.N : 0.4.7-beta.1 -> 0.4.7-beta.2
+    local base suffix n
+    base="${1%-beta.*}"
+    suffix="${1##*-beta.}"
+    n=$((suffix + 1))
+    echo "${base}-beta.${n}"
+}
+
+_is_beta_version() {
+    [[ "$1" == *"-beta."* ]]
 }
 
 # ------------------------------------------------------------------------------
 # Arguments
 # ------------------------------------------------------------------------------
 FULL_REINSTALL=false
+BETA=false
 VERSION=""
 
 for arg in "$@"; do
     case "$arg" in
         --full-reinstall) FULL_REINSTALL=true ;;
+        --beta) BETA=true ;;
         --*)
             echo "Erreur : option inconnue : $arg"
-            echo "Usage: ./release.sh [X.Y.Z] [--full-reinstall]"
+            echo "Usage: ./release.sh [X.Y.Z[-beta.N]] [--full-reinstall] [--beta]"
             exit 1
             ;;
         *) VERSION="$arg" ;;
     esac
 done
 
+# Auto-bump si pas de version fournie
 if [[ -z "$VERSION" ]]; then
     CURRENT_VERSION=$(cat version.txt 2>/dev/null | tr -d '[:space:]' || echo "0.4.0")
-    VERSION=$(_bump_patch "$CURRENT_VERSION")
+    if [[ "$BETA" == "true" ]]; then
+        if _is_beta_version "$CURRENT_VERSION"; then
+            VERSION=$(_bump_beta "$CURRENT_VERSION")
+        else
+            # Première beta depuis une version stable : X.Y.Z -> X.Y.Z-beta.1
+            VERSION="${CURRENT_VERSION}-beta.1"
+        fi
+    else
+        if _is_beta_version "$CURRENT_VERSION"; then
+            # Passer d'une beta à la version stable correspondante
+            VERSION="${CURRENT_VERSION%-beta.*}"
+        else
+            VERSION=$(_bump_patch "$CURRENT_VERSION")
+        fi
+    fi
     echo "  Auto-bump : ${CURRENT_VERSION} -> ${VERSION}"
 fi
 
-# Valider le format de version (X.Y, X.Y.Z ou X.Y.Z.W)
-if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
-    echo "Erreur : format de version invalide. Attendu : X.Y.Z (ex: 0.4.7)"
+# Valider le format de version (X.Y, X.Y.Z, X.Y.Z.W, X.Y.Z-beta.N, X.Y.Z.W-beta.N)
+if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+(-beta\.[0-9]+)?$ ]]; then
+    echo "Erreur : format de version invalide."
+    echo "  Stable : X.Y.Z  (ex: 0.4.7)"
+    echo "  Beta   : X.Y.Z-beta.N  (ex: 0.4.7-beta.1)"
     exit 1
+fi
+
+# Détecter automatiquement si c'est une beta d'après la version
+if _is_beta_version "$VERSION"; then
+    BETA=true
 fi
 
 TAG="v${VERSION}"
 TODAY="$(date +%Y.%m.%d)"
 BUILD_ID="build-${TODAY}.01"
+CHANNEL="release"
+[[ "$BETA" == "true" ]] && CHANNEL="beta"
 
 # ------------------------------------------------------------------------------
 # Vérifier si le tag existe déjà → menu interactif
@@ -67,7 +106,11 @@ if [[ "$LOCAL_TAG_EXISTS" == "true" || "$REMOTE_TAG_EXISTS" == "true" ]]; then
     if [[ "$REMOTE_TAG_EXISTS" == "true" ]]; then echo "    - sur le remote"; fi
     echo ""
     echo "  1) Ecraser  — supprimer le tag existant et recreer"
-    echo "  2) Bump     — utiliser $(_bump_patch "$VERSION") a la place"
+    if [[ "$BETA" == "true" ]]; then
+        echo "  2) Bump     — utiliser $(_bump_beta "$VERSION") a la place"
+    else
+        echo "  2) Bump     — utiliser $(_bump_patch "$VERSION") a la place"
+    fi
     echo "  3) Annuler"
     echo ""
     read -rp "  Votre choix [1/2/3] : " CHOICE
@@ -78,7 +121,11 @@ if [[ "$LOCAL_TAG_EXISTS" == "true" || "$REMOTE_TAG_EXISTS" == "true" ]]; then
             if [[ "$REMOTE_TAG_EXISTS" == "true" ]]; then git push origin --delete "${TAG}" || true; fi
             ;;
         2)
-            VERSION=$(_bump_patch "$VERSION")
+            if [[ "$BETA" == "true" ]]; then
+                VERSION=$(_bump_beta "$VERSION")
+            else
+                VERSION=$(_bump_patch "$VERSION")
+            fi
             TAG="v${VERSION}"
             BUILD_ID="build-$(date +%Y.%m.%d).01"
             echo "  Nouvelle version : ${VERSION}"
@@ -97,17 +144,19 @@ fi
 echo ""
 echo "======================================================"
 echo "  PDF Header Tool — Release ${TAG}"
+echo "  Canal   : ${CHANNEL}"
 echo "  Build ID : ${BUILD_ID}"
 echo "  Full reinstall : ${FULL_REINSTALL}"
 echo "======================================================"
 echo ""
 
 # ------------------------------------------------------------------------------
-# 1. Mettre à jour VERSION dans pdf_header.py
+# 1. Mettre à jour VERSION, BUILD_ID et CHANNEL dans pdf_header.py
 # ------------------------------------------------------------------------------
-echo "[1/9] Mise a jour VERSION dans pdf_header.py..."
+echo "[1/9] Mise a jour VERSION/CHANNEL dans pdf_header.py..."
 sed -i "s/^VERSION     = .*/VERSION     = \"${VERSION}\"/" pdf_header.py
 sed -i "s/^BUILD_ID    = .*/BUILD_ID    = \"${BUILD_ID}\"/" pdf_header.py
+sed -i "s/^CHANNEL     = .*/CHANNEL     = \"${CHANNEL}\"/" pdf_header.py
 
 # ------------------------------------------------------------------------------
 # 2. Mettre à jour version.txt
@@ -132,7 +181,7 @@ python3 -c "import ast; ast.parse(open('pdf_header.py').read()); print('  pdf_he
 # ------------------------------------------------------------------------------
 echo "[5/9] Commit..."
 git add pdf_header.py version.txt build_dist.py
-git commit -m "chore: bump version ${TAG}"
+git commit -m "chore: bump version ${TAG} [${CHANNEL}]"
 
 # ------------------------------------------------------------------------------
 # 6. Tag
@@ -181,6 +230,10 @@ if command -v gh &>/dev/null; then
             echo "  Attente... (${i}/12)"
             sleep 5
         done
+        if [[ "$BETA" == "true" ]]; then
+            gh release edit "${TAG}" --prerelease
+            echo "  Release marquee comme pre-release."
+        fi
         gh release upload "${TAG}" "${UPLOAD_ARGS[@]}" --clobber
         echo "  Assets uploades avec succes."
     else
@@ -191,6 +244,7 @@ else
     echo "  gh CLI non installe. Pour uploader manuellement :"
     echo "  sudo pacman -S github-cli && gh auth login"
     echo "  Puis :"
+    [[ "$BETA" == "true" ]] && echo "    gh release edit ${TAG} --prerelease"
     [[ -f "$METADATA" ]]  && echo "    gh release upload ${TAG} ${METADATA} --clobber"
     [[ -f "$PATCH_ZIP" ]] && echo "    gh release upload ${TAG} ${PATCH_ZIP} --clobber"
     [[ -f "$FULL_ZIP" ]]  && echo "    gh release upload ${TAG} ${FULL_ZIP} --clobber"
@@ -198,5 +252,5 @@ fi
 
 echo ""
 echo "======================================================"
-echo "  Release ${TAG} terminee."
+echo "  Release ${TAG} [${CHANNEL}] terminee."
 echo "======================================================"
