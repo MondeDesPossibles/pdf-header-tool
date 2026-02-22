@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.22.01
+# Build   : build-2026.02.22.02
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -93,17 +93,24 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 - `_get_install_dir()` : retourne `Path(__file__).parent` (portable, identique Windows et Linux depuis v0.4.6)
 - `_bootstrap()` : vérifie que fitz, customtkinter et PIL sont importables — affiche un message d'erreur et quitte si une dépendance est manquante (plus de création de venv depuis v0.4.6)
 
-### Mise à jour automatique (depuis v0.4.6.1)
-- `_apply_pending_update()` : s'exécute **avant** `_bootstrap()` au démarrage — applique un patch
-  téléchargé lors du lancement précédent (déplace les fichiers de `_update_pending/` vers leur destination)
+### Mise à jour automatique (depuis v0.4.6.1, amélioré en v0.4.6.2+)
+- `_apply_pending_update()` : s'exécute **avant** `_bootstrap()` au démarrage
+  - Applique le patch de `_update_pending/` (déplace les fichiers vers leur destination)
+  - Met à jour `_RUNNING_VERSION` en mémoire avec la version appliquée
+  - **Redémarre le process immédiatement** après application (Windows: `subprocess.Popen + DETACHED_PROCESS`, Linux: `os.execv`) → la nouvelle version est active dès ce lancement
+  - Traces timestampées dans stdout → capturées par `lancer.bat` dans `pdf_header_launch.log`
 - `check_update()` : thread daemon (non bloquant) lancé au démarrage
-- Repo : `MondeDesPossibles/pdf-header-tool` — constante `GITHUB_REPO`
-- Interroge l'**API GitHub Releases** (`/releases/latest`) — jamais depuis `main`
+- Constantes : `GITHUB_REPO`, `CHANNEL` (`"release"` | `"beta"`)
+- Endpoint selon `CHANNEL` :
+  - `"release"` → `/releases/latest` (stable uniquement — jamais affecté par les pre-releases)
+  - `"beta"` → `/releases[0]` (toutes releases, pre-releases incluses)
+- SSL : `ssl.create_default_context(cafile=certifi.where())` — nécessaire sur Python Embedded (pas de certs Windows)
+- Si `_RUNNING_VERSION == remote_version` → rien (évite le double téléchargement)
 - Si nouvelle version : télécharge `metadata.json` depuis les assets de la release
-- Si `requires_full_reinstall: false` : télécharge `app-patch.zip`, vérifie SHA256,
-  extrait dans `_update_pending/` → sera appliqué au **prochain démarrage**
+- Si `requires_full_reinstall: false` : télécharge `app-patch-vX.Y.Z.zip`, vérifie SHA256,
+  extrait dans `_update_pending/` → sera appliqué au **prochain démarrage** (puis restart auto)
 - Si `requires_full_reinstall: true` : log uniquement (futur : notification GUI Étape 4.7+)
-- Champ `delete` du manifest : fichiers à supprimer lors de l'application (renommages entre versions)
+- Champ `delete` du manifest : fichiers à supprimer lors de l'application
 - Tout échec réseau est silencieux — ne jamais bloquer le démarrage de l'app
 
 ### Constantes et fonctions module-level (v0.4.5)
@@ -161,6 +168,7 @@ Interface principale. Cycle de vie :
 - `Pillow` (import `PIL`) — conversion pixmap → ImageTk
 - `customtkinter` — GUI moderne (remplace tkinter à partir de v1.1.0)
 - `tkinter` — conservé pour `tk.Canvas` (CustomTkinter n'a pas de canvas natif)
+- `certifi` — certificats CA pour SSL (Python Embedded n'inclut pas les certs Windows)
 
 ---
 
@@ -289,26 +297,32 @@ d'extraire ces fichiers de façon fiable depuis Linux.
 
 **Script `release.sh` (dev uniquement) :**
 ```bash
-./release.sh                          # auto-bump depuis version.txt (recommandé)
-./release.sh X.Y.Z                   # release avec version explicite
+./release.sh                          # stable auto-bump (recommandé)
+./release.sh X.Y.Z                    # stable version explicite
 ./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ ont changé
+./release.sh --beta                   # beta auto-bump (0.4.7-beta.1 → .2...)
+./release.sh X.Y.Z-beta.N --beta     # beta version explicite
 ```
 
 Comportement `release.sh` :
-- Sans argument : lit `version.txt`, incrémente le dernier segment (ex: 0.4.6.5 → 0.4.6.6)
+- Sans argument : lit `version.txt`, auto-bump (stable → stable, beta → beta)
+- `--beta` : version `X.Y.Z-beta.N`, `CHANNEL = "beta"`, GitHub Release marquée pre-release
+- Sans `--beta` : `CHANNEL = "release"`, GitHub Release stable
+- Met à jour `VERSION`, `BUILD_ID` **et `CHANNEL`** dans `pdf_header.py` via `sed`
 - Si le tag existe déjà : menu interactif (Écraser / Bump / Annuler)
 - Attend jusqu'à 60s que GitHub Actions crée la Release avant d'uploader les assets
 
 Le script automatise dans l'ordre :
-1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`
-2. Mise à jour `BUILD_ID` (format `build-YYYY.MM.DD.NN`)
+1. Mise à jour `VERSION`, `BUILD_ID`, `CHANNEL` dans `pdf_header.py` et `version.txt`
+2. Mise à jour `BUILD_ID` dans `build_dist.py`
 3. Validation syntaxe Python (`ast.parse`)
 4. `git commit + tag vX.Y.Z + push origin main + push origin vX.Y.Z`
 5. `python3 build_dist.py` → génère dans `dist/` :
    - `PDFHeaderTool-vX.Y.Z-windows.zip` (~40 MB — installation fraîche)
    - `app-patch-vX.Y.Z.zip` (~50-300 KB — sources Python uniquement)
    - `metadata.json` (version, flags, hashes)
-6. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
+6. Si beta : `gh release edit vX.Y.Z-beta.N --prerelease`
+7. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
 
 **Format `metadata.json` (asset de chaque GitHub Release) :**
 ```json

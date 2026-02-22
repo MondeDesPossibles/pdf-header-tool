@@ -350,6 +350,83 @@ gérés localement via `release.sh` (le dossier `tcltk/` n'est pas disponible su
 
 ---
 
+## Étape 4.6.2 — Corrections post-release et canal beta
+**Statut : Terminé ✓**
+**Version livrée : v0.4.6.6 → v0.4.6.10+**
+**Prérequis : Étape 4.6.1 terminée**
+
+Série de corrections identifiées après le premier déploiement chez un utilisateur réel.
+
+### Corrections critiques (v0.4.6.6)
+
+**Bug 1 : app-patch manquant dans les releases GitHub**
+`release.sh` cherchait `app-patch-{VERSION}.zip` (sans `v`) mais `build_dist.py`
+génère `app-patch-v{VERSION}.zip` (avec `v`). Le fichier n'était jamais uploadé →
+mécanisme de mise à jour silencieusement cassé depuis v0.4.6.1.
+Fix : `PATCH_ZIP="dist/app-patch-${TAG}.zip"` dans `release.sh`.
+
+**Bug 2 : Version affichée deux fois dans l'UI**
+`self.root.title()` et le label topbar affichaient tous les deux la version.
+Fix : `self.root.title("PDF Header Tool")` — version uniquement dans la topbar.
+
+**Bug 3 : Nom du dossier dans le ZIP incohérent après auto-update**
+Le zip contenait `PDFHeaderTool-vX.Y.Z-build-.../` — nom stale après mise à jour.
+Fix : dossier interne = `PDFHeaderTool/` (stable), zip = `PDFHeaderTool-vX.Y.Z-windows.zip`.
+
+### Logging des mises à jour (v0.4.6.7)
+
+`_apply_pending_update()` et `_check_update_thread()` écrivent désormais des traces
+timestampées sur stdout, capturées par `lancer.bat` dans `pdf_header_launch.log`.
+Events : `UPDATE_APPLY dossier detecte`, `UPDATE_APPLY fichier applique: X`,
+`UPDATE_APPLY succes`, `UPDATE_CHECK version courante: X`,
+`UPDATE_CHECK nouvelle version disponible: X`, `UPDATE_CHECK patch mis en attente`,
+`UPDATE_CHECK ERREUR: ...`.
+
+### SSL certificate verify failed sur Python Embedded (v0.4.6.8 — full-reinstall)
+
+Python Embedded n'inclut pas les certificats CA Windows → `urllib` échouait sur
+toutes les requêtes HTTPS vers l'API GitHub.
+Fix :
+- `certifi` ajouté aux dépendances pip cross-compilées dans `build_dist.py`
+- `_check_update_thread()` crée `ssl.create_default_context(cafile=certifi.where())`
+- Fallback sur `ssl.create_default_context()` si `certifi` absent
+
+### Amélioration UX du mécanisme de mise à jour (v0.4.6.9+)
+
+**`_RUNNING_VERSION`** — variable module-level initialisée à `VERSION` et mise à jour
+par `_apply_pending_update()`. `_check_update_thread()` compare contre `_RUNNING_VERSION`
+au lieu de `VERSION` → évite le double téléchargement quand un patch vient d'être appliqué.
+
+**Redémarrage immédiat après patch** — après application d'un patch, le process est
+relancé avant que la GUI ne soit créée (Windows : `subprocess.Popen + DETACHED_PROCESS`,
+Linux : `os.execv`). Résultat : la nouvelle version est active dès ce lancement (2 étapes
+au lieu de 3).
+
+### Canal de distribution beta/release (v0.4.6.11+)
+
+**Objectif :** protéger les utilisateurs "release" des mises à jour en cours de dev.
+
+**Mécanisme :** constante `CHANNEL = "release" | "beta"` dans `pdf_header.py`.
+- Canal `release` → `GET /releases/latest` (stable uniquement — ignore les pre-releases)
+- Canal `beta` → `GET /releases[0]` (toutes releases, pre-releases incluses)
+
+GitHub `/releases/latest` ignore nativement les pre-releases → les utilisateurs stables
+ne voient jamais les betas.
+
+**`release.sh --beta` :**
+- Versionnement : `X.Y.Z-beta.N` (ex: `0.4.7-beta.1`)
+- Auto-bump beta : `0.4.7-beta.1` → `0.4.7-beta.2`
+- Met à jour `CHANNEL = "beta"` dans `pdf_header.py` via `sed`
+- Marque la GitHub Release comme pre-release (`gh release edit --prerelease`)
+
+```bash
+./release.sh              # stable (utilisateurs finaux)
+./release.sh --beta       # beta (testeurs) — auto-bump
+./release.sh 0.4.7-beta.1 # beta explicite
+```
+
+---
+
 ## Étape 4.7 — Découpage modulaire (multi-fichiers)
 **Statut : À faire — dépend de l'Étape 4.6.1**
 **Version cible : 0.4.7**
@@ -930,11 +1007,11 @@ shortcuts Bureau/Menu Démarrer, associations de fichiers `.pdf`, désinstalleur
 
 ### Dettes techniques (avant v0.5.0)
 
-#### Comparaison de version par chaîne (CRITIQUE avant 0.4.10)
-Dans `_check_update_thread()`, la comparaison `remote_version == VERSION` est correcte
-pour vérifier si la version est identique, mais la comparaison d'ordre implicite (si jamais
-utilisée) échouerait à `0.4.10 vs 0.4.9` (comparaison lexicographique : `"0.4.10" < "0.4.9"`).
-À corriger en utilisant `tuple(int(x) for x in v.split("."))` avant d'atteindre la v0.4.10.
+#### Comparaison de version par chaîne
+Dans `_check_update_thread()`, la comparaison `remote_version == _RUNNING_VERSION` est
+correcte pour le cas "déjà à jour". Validée jusqu'à 0.4.6.10. Si un ordre (`<`/`>`) est
+jamais introduit, utiliser `tuple(int(x) for x in v.split("."))` pour éviter la
+comparaison lexicographique (`"0.4.10" < "0.4.9"`). Non urgent actuellement.
 
 #### `requires_full_reinstall: true` sans notification GUI
 Si une release nécessite une réinstallation complète, le thread abandonne silencieusement.
