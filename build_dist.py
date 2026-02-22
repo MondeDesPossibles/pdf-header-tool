@@ -54,7 +54,7 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 DEFAULT_PYTHON_VERSION = "3.11.9"
-BUILD_ID               = "build-2026.02.21.07"   # incrementer à chaque build
+BUILD_ID = "build-2026.02.22.01"
 
 PYTHON_EMBED_URL_TEMPLATE = (
     "https://www.python.org/ftp/python/{ver}/python-{ver}-embed-amd64.zip"

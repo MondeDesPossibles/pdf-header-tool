@@ -6,7 +6,7 @@
 # ==============================================================================
 
 VERSION     = "0.4.6"
-BUILD_ID    = "build-2026.02.21.07"
+BUILD_ID    = "build-2026.02.22.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 
 import sys

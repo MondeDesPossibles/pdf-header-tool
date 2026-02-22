@@ -29,6 +29,18 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
     exit 1
 fi
 
+# Vérifier que le tag n'existe pas déjà (local ou remote)
+if git tag -l | grep -q "^${TAG}$"; then
+    echo "Erreur : le tag ${TAG} existe déjà en local."
+    echo "  Choisissez une nouvelle version, ou supprimez le tag : git tag -d ${TAG}"
+    exit 1
+fi
+if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+    echo "Erreur : le tag ${TAG} existe déjà sur le remote."
+    echo "  Choisissez une nouvelle version."
+    exit 1
+fi
+
 TAG="v${VERSION}"
 TODAY="$(date +%Y.%m.%d)"
 BUILD_ID="build-${TODAY}.01"
