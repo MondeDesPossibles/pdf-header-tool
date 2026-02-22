@@ -1,12 +1,12 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.22.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.4.6.10"
-BUILD_ID    = "build-2026.02.22.01"
+VERSION     = "0.4.6.11"
+BUILD_ID    = "build-2026.02.22.03"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 CHANNEL     = "release"      # "release" | "beta" — détermine le canal de mise à jour
 _RUNNING_VERSION = VERSION   # mis à jour par _apply_pending_update() si un patch est appliqué

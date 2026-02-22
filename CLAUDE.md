@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.22.02
+# Build   : build-2026.02.22.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -179,46 +179,64 @@ Interface principale. Cycle de vie :
 
 ---
 
-## Logging et debug
+## Logging et debug (depuis v0.4.6.11 — Étape 4.6.3)
 
-### Principe
-- La fonction `_debug_log()` est **toujours présente** dans le code — ne jamais la supprimer
-- L'enregistrement est contrôlé par `_DEBUG_ENABLED` (global bool) + clé `"debug_enabled"` dans la config
-- Par défaut : **désactivé** — activation prévue dans la fenêtre Préférences (Étape 13)
+### Profils de verbosité
+- `"simple"` (prod) — INFO : démarrage, actions majeures, erreurs. **Défaut en canal `release`**
+- `"medium"` (beta/support) — DEBUG : + timings, fonctions clés. **Défaut en canal `beta`**
+- `"full"` (dev) — DEBUG + stderr : + traces UI, états, calculs, PDF_INSERT_*
+- Clé config : `"log_profile": "simple"|"medium"|"full"` (remplace `"debug_enabled"`)
+- Sélecteur dans la fenêtre Préférences prévu à l'Étape 13
 
-### Événements à logger (quand activé)
-| Événement | Données |
-|-----------|---------|
-| OPEN_FILES / OPEN_FOLDER | liste des fichiers chargés |
-| RENDER | canvas_wh, scale, page_pt, page_px, tk_scaling |
-| CLICK | filename, canvas coords, offset, page_px, ratio, canvas_wh |
-| APPLY | filename, ratio, page_pt, x_pt, y_pt — puis par page : rect + fitz.Point |
-| SKIP | filename, index |
+### Fichiers de log
+- `INSTALL_DIR / "pdf_header_app.log"` — niveau selon profil, rotation 1MB × 5 backups
+- `INSTALL_DIR / "pdf_header_errors.log"` — ERROR+ toujours actif, rotation 500KB × 3 backups
 
-### Fichier log
-- Chemin : `INSTALL_DIR / "pdf_header_debug.log"`
-- Mode append (pas d'écrasement entre sessions)
-- Format : `[YYYY-MM-DD HH:MM:SS] EVENT données`
-
-### Pattern dans le code
+### Sous-loggers par domaine
 ```python
-_DEBUG_ENABLED = False   # module-level
-_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+log_app    = logging.getLogger("pdf_header.app")    # lifecycle, session
+log_ui     = logging.getLogger("pdf_header.ui")     # interactions utilisateur
+log_pdf    = logging.getLogger("pdf_header.pdf")    # opérations PyMuPDF
+log_update = logging.getLogger("pdf_header.update") # système de mise à jour
+log_config = logging.getLogger("pdf_header.config") # chargement/sauvegarde config
+log_font   = logging.getLogger("pdf_header.font")   # découverte des polices
+```
+Ces loggers sont réutilisables tels quels lors du découpage en `app/` (Étape 4.7).
 
-def _debug_log(msg: str):
-    if not _DEBUG_ENABLED:
-        return
-    import datetime
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass
+### `_debug_log()` — wrapper rétrocompatible (NE JAMAIS SUPPRIMER)
+```python
+def _debug_log(msg: str, level: int = 1) -> None:
+    # level: 1=INFO (simple+), 2=DEBUG (medium+), 3=DEBUG [VERB] (full)
+    # Sera migré vers les domain loggers lors du refactor 4.7
+```
+Tous les appels existants (RENDER, CLICK, APPLY) conservent `level=1` par défaut.
+
+### Décorateur `_log_timed(logger, label)`
+Ajoute automatiquement START / OK elapsed_ms / FAILED elapsed_ms sur une fonction.
+Utilisé sur les fonctions à instrumenter en mode medium/full.
+
+### Événements structurés (profil full — format `key=value` stable)
+| Event | Données |
+|---|---|
+| `PDF_INSERT_PARAMS` | text_len, text_preview, font, size, bold, italic, rotation, click_ratio, preset, margins |
+| `PDF_INSERT_RESULT` | page, page_dims, x_pt/y_pt/fitz_y, text_rect, text_w_est, truncated, remaining_chars, applied_ratio |
+
+Ces events définissent les champs de la future dataclass `InsertResult` (Étape 4.9 / pytest).
+
+### Initialisation
+```python
+# Module-level (early) :
+_setup_logger(_default_log_profile())   # avant check_update()
 
 # Dans PDFHeaderApp.__init__, après load_config() :
-global _DEBUG_ENABLED
-_DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+_setup_logger(self.cfg.get("log_profile", _default_log_profile()))
+_log_session_start()   # APP_START session=XXXXXXXX version=... os=... runtime=...
+```
+
+### Exception handler global
+```python
+sys.excepthook = _global_exception_handler
+# → log_app.critical("UNCAUGHT_EXCEPTION", exc_info=...) + messagebox.showerror
 ```
 
 ---

@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.22.03
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -424,6 +424,52 @@ ne voient jamais les betas.
 ./release.sh --beta       # beta (testeurs) — auto-bump
 ./release.sh 0.4.7-beta.1 # beta explicite
 ```
+
+---
+
+## Étape 4.6.3 — Système de logs multi-niveaux
+**Statut : Terminé ✓**
+**Version livrée : v0.4.6.11**
+**Prérequis : Étape 4.6.2 terminée**
+
+Mise en place d'un système de logs solide avant le découpage modulaire (Étape 4.7).
+Sources consultées : recommandations Gemini + ChatGPT + analyse Claude.
+
+### Architecture
+
+**3 profils de verbosité :**
+- `simple` (prod) → INFO — démarrage, actions majeures, erreurs, check update
+- `medium` (beta/support) → DEBUG — + entrée/sortie fonctions clés, timings
+- `full` (dev) → DEBUG + stderr — + traces UI, états internes, calculs layout, PDF_INSERT_*
+
+**Défaut automatique par canal :** `release=simple`, `beta=medium`
+
+**2 fichiers de log** (dans `INSTALL_DIR`) :
+- `pdf_header_app.log` — tous niveaux selon profil, rotation 1MB × 5 backups
+- `pdf_header_errors.log` — ERROR+ toujours actif, rotation 500KB × 3 backups
+
+**6 sous-loggers par domaine** (prépare la migration vers `app/` à l'Étape 4.7) :
+- `pdf_header.app`, `.ui`, `.pdf`, `.update`, `.config`, `.font`
+
+### Changements dans pdf_header.py
+
+- `_setup_logger(profile)` + `_default_log_profile()`
+- `_log_timed(logger, label)` décorateur START/OK/FAILED + elapsed_ms
+- `_log_session_start()` : session_id, version, OS, Python, runtime, profile
+- `_global_exception_handler` : sys.excepthook → log_app.critical + messagebox
+- `_debug_log(msg, level)` conservé comme wrapper rétrocompatible (CLAUDE.md)
+- Migration config : `"debug_enabled"` (bool) → `"log_profile"` (str)
+- Events structurés `PDF_INSERT_PARAMS` + `PDF_INSERT_RESULT` (profil full)
+  → prépare la future dataclass `InsertResult` pour les tests pytest (Étape 4.9)
+- Capture retour `insert_textbox()` → `remaining_chars` (troncature détectée)
+
+### Instrumentation (par profil)
+
+| Profil | Events |
+|---|---|
+| simple | CONFIG_LOAD/SAVE, OPEN_FILES/FOLDER, PDF_OPEN, PDF_PROCESS_*, PDF_SKIP, UPDATE_* |
+| medium | + RENDER (elapsed_ms), FONT_SCAN_DONE, UPDATE_CHECK_START, timings |
+| full | + UI_CLICK, UI_FONT_CHANGE, OVERLAY_UPDATE, PDF_INSERT_PARAMS/RESULT |
 
 ---
 
