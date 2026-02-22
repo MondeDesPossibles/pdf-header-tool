@@ -112,12 +112,15 @@ def _find_pip() -> list:
         ["pip3"],
         ["pip"],
     ]:
-        result = subprocess.run(
-            candidate + ["--version"],
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return candidate
+        try:
+            result = subprocess.run(
+                candidate + ["--version"],
+                capture_output=True,
+            )
+            if result.returncode == 0:
+                return candidate
+        except (FileNotFoundError, OSError):
+            continue
     print("  ERREUR : pip introuvable. Installez-le avec : sudo pacman -S python-pip", file=sys.stderr)
     sys.exit(1)
 
