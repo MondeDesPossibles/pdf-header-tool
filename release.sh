@@ -23,11 +23,15 @@ if [[ "${2:-}" == "--full-reinstall" ]]; then
     FULL_REINSTALL=true
 fi
 
-# Valider le format de version
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+# Valider le format de version (X.Y, X.Y.Z ou X.Y.Z.W)
+if ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
     echo "Erreur : format de version invalide. Attendu : X.Y.Z (ex: 0.4.7)"
     exit 1
 fi
+
+TAG="v${VERSION}"
+TODAY="$(date +%Y.%m.%d)"
+BUILD_ID="build-${TODAY}.01"
 
 # Vérifier que le tag n'existe pas déjà (local ou remote)
 if git tag -l | grep -q "^${TAG}$"; then
@@ -40,10 +44,6 @@ if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
     echo "  Choisissez une nouvelle version."
     exit 1
 fi
-
-TAG="v${VERSION}"
-TODAY="$(date +%Y.%m.%d)"
-BUILD_ID="build-${TODAY}.01"
 
 echo "======================================================"
 echo "  PDF Header Tool — Release ${TAG}"
