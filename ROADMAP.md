@@ -262,8 +262,96 @@ Ils doivent être copiés depuis une installation Windows standard dans `tcltk/`
 
 ---
 
+## Étape 4.6.1 — Infrastructure de release et mise à jour automatique v2
+**Statut : En cours**
+**Version cible : v0.4.6 (infra dev — pas de bump utilisateur)**
+**Prérequis : Étape 4.6 terminée**
+
+Mettre en place un workflow de release reproductible et un mécanisme de mise à jour
+robuste, compatible avec l'architecture multi-fichiers de l'étape 4.7.
+
+### Problème résolu
+
+L'ancien `check_update()` lisait depuis la branche `main` et ne téléchargeait que
+`pdf_header.py`. Ces deux comportements sont incorrects et incompatibles avec 4.7 :
+- Lire depuis `main` signifie qu'un commit en cours de travail peut déclencher une MAJ
+- Un seul fichier ne fonctionnera plus quand l'app sera découpée en `app/*.py`
+
+### Stratégie choisie : manifest JSON + patch zip
+
+Chaque release GitHub publie 3 assets :
+```
+PDFHeaderTool-vX.Y.Z-windows.zip     (~40 MB — installation fraîche)
+app-patch-vX.Y.Z.zip                 (~50-300 KB — sources Python uniquement)
+metadata.json                        (version, flags, hashes)
+```
+
+### Format metadata.json
+
+```json
+{
+  "manifest_version": 1,
+  "version": "0.4.7",
+  "requires_full_reinstall": false,
+  "patch_zip": {
+    "name": "app-patch-v0.4.7.zip",
+    "sha256": "...",
+    "size": 180000
+  },
+  "delete": []
+}
+```
+
+- `requires_full_reinstall: true` si `site-packages/` ou `python/` changent
+- `delete` liste les fichiers à supprimer (ex : module renommé entre deux versions)
+- `patch_zip` contient uniquement les fichiers sources modifiés
+
+### Logique de mise à jour dans l'app (au démarrage)
+
+1. `_apply_pending_update()` s'exécute en premier — applique un patch téléchargé lors
+   du lancement précédent (si `_update_pending/` existe)
+2. `check_update()` tourne en thread daemon :
+   - Interroge GitHub Releases API → dernière release stable
+   - Si même version → rien
+   - Si nouvelle version → télécharge `metadata.json` depuis les assets
+   - Si `requires_full_reinstall: true` → log (futur : notification GUI Étape 4.7+)
+   - Sinon → télécharge `app-patch.zip`, vérifie SHA256, extrait dans `_update_pending/`
+3. Au **prochain démarrage**, `_apply_pending_update()` déplace les fichiers en place
+   et supprime les fichiers listés dans `delete`
+
+Ce mécanisme en deux temps évite tout problème de fichiers verrouillés sous Windows.
+
+### Workflow développeur (release.sh)
+
+```bash
+./release.sh X.Y.Z              # release standard (sources uniquement)
+./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ changent
+```
+
+`release.sh` automatise :
+1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`
+2. Mise à jour `BUILD_ID` (date du jour)
+3. Validation syntaxe Python (`ast.parse`)
+4. `git commit + tag vX.Y.Z + push`
+5. `python3 build_dist.py` → génère le zip + `metadata.json` + `app-patch-vX.Y.Z.zip`
+6. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
+
+### GitHub Actions (.github/workflows/release.yml)
+
+Déclenché sur push tag `v*.*.*`. Crée automatiquement la GitHub Release avec les
+release notes générées depuis les commits. Le build et l'upload des assets sont
+gérés localement via `release.sh` (le dossier `tcltk/` n'est pas disponible sur CI).
+
+### Changements dans build_dist.py
+
+- Génère `metadata.json` avec version, `requires_full_reinstall`, hash SHA256 du patch zip
+- Génère `app-patch-vX.Y.Z.zip` contenant uniquement les fichiers `.py` du projet
+- Argument CLI `--full-reinstall` pour forcer `requires_full_reinstall: true`
+
+---
+
 ## Étape 4.7 — Découpage modulaire (multi-fichiers)
-**Statut : À faire — dépend de l'Étape 4.6**
+**Statut : À faire — dépend de l'Étape 4.6.1**
 **Version cible : 0.4.7**
 **Prérequis : structure Python Embarqué en place (Étape 4.6)**
 
@@ -784,24 +872,27 @@ Fichier `pdf_header_templates.json` dans `INSTALL_DIR` :
 
 ## Conventions pour chaque étape
 
-1. Modifier `pdf_header.py` uniquement (sauf si la dépendance touche `install.py`)
-2. Incrémenter `VERSION` dans le script et `version.txt`
-3. Vérifier syntaxe :
+1. Avant v0.4.7 : modifier `pdf_header.py`. À partir de v0.4.7 : modifier le module concerné dans `app/`
+2. Vérifier syntaxe :
    ```bash
    python3 -c "import ast; ast.parse(open('pdf_header.py').read())"
    ```
-4. Tester sur Windows avant de merger
-5. Mettre à jour `CLAUDE.md` si l'architecture change
-6. Marquer l'étape comme **Statut : Terminé ✓** dans ce fichier
-7. Commiter avec un message clair :
+3. Tester sur Windows avant de merger
+4. Mettre à jour `CLAUDE.md` si l'architecture change
+5. Marquer l'étape comme **Statut : Terminé ✓** dans ce fichier
+6. Workflow de release (depuis v0.4.6.1) :
    ```bash
-   git add .
-   git commit -m "feat: étape X — description"
-   git tag vX.Y.Z
-   git push && git push origin vX.Y.Z
+   # 1. Créer une branche dédiée
+   git checkout -b feat/step-X.Y
+   # 2. Travailler, committer
+   # 3. Merger dans main
+   git checkout main && git merge feat/step-X.Y
+   # 4. Lancer le script de release (bump version + build + tag + push + upload)
+   ./release.sh X.Y.Z
+   # Si site-packages/ ou python/ ont changé :
+   ./release.sh X.Y.Z --full-reinstall
    ```
-8. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
-9. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
-10. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `install.py`, `install.bat`,
-    `README.md`, `CLAUDE.md`, `ROADMAP.md`.
-11. Vérifier que ce build apparaît dans les logs runtime (`install.bat`, `install.py`, `pdf_header.py`).
+7. Pour ce cycle de reprise, démarrer à `v0.0.1` et viser `v1.0.0` à l'étape 10.
+8. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
+9. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `README.md`, `CLAUDE.md`, `ROADMAP.md`.
+10. Vérifier que ce build apparaît dans les logs runtime (`pdf_header.py`).

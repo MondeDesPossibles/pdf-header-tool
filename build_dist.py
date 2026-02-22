@@ -41,6 +41,8 @@ Resultat :
 """
 
 import argparse
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -81,6 +83,13 @@ PROJECT_FILES = [
     "pdf_header.py",
     "version.txt",
     "lancer.bat",
+]
+
+# Fichiers sources inclus dans app-patch.zip (mise à jour légère)
+# À partir de v0.4.7 : ajouter les fichiers app/*.py ici
+PATCH_FILES = [
+    "pdf_header.py",
+    "version.txt",
 ]
 
 # ---------------------------------------------------------------------------
@@ -252,7 +261,7 @@ def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Build principal
 # ---------------------------------------------------------------------------
-def build(python_version: str) -> None:
+def build(python_version: str, full_reinstall: bool = False) -> None:
     # Lire la version du projet depuis version.txt
     version_file = SCRIPT_DIR / "version.txt"
     if version_file.exists():
@@ -373,9 +382,42 @@ def build(python_version: str) -> None:
     zip_size_mb = zip_path.stat().st_size / 1024 / 1024
     _log(f"Zip cree : {zip_path.name} ({zip_size_mb:.1f} Mo)")
 
+    # 11. Création du patch zip (sources Python uniquement — mise à jour légère)
+    patch_zip_name = f"app-patch-v{project_version}.zip"
+    patch_zip_path = DIST_BASE / patch_zip_name
+    _log(f"Creation du patch zip : {patch_zip_name}...")
+    with zipfile.ZipFile(patch_zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        for fname in PATCH_FILES:
+            src = SCRIPT_DIR / fname
+            if src.exists():
+                zf.write(src, fname)
+                _log(f"  + {fname}")
+    patch_size_kb = patch_zip_path.stat().st_size / 1024
+    patch_sha256 = hashlib.sha256(patch_zip_path.read_bytes()).hexdigest()
+    _log(f"Patch zip cree : {patch_zip_name} ({patch_size_kb:.1f} Ko) sha256={patch_sha256[:16]}...")
+
+    # 12. Génération de metadata.json
+    metadata = {
+        "manifest_version": 1,
+        "version": project_version,
+        "requires_full_reinstall": full_reinstall,
+        "patch_zip": {
+            "name": patch_zip_name,
+            "sha256": patch_sha256,
+            "size": patch_zip_path.stat().st_size,
+        },
+        "delete": [],
+    }
+    metadata_path = DIST_BASE / "metadata.json"
+    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    _log(f"metadata.json cree : requires_full_reinstall={full_reinstall}")
+
     print(f"\n{'=' * 60}")
     print(f"  Distribution prête  : {zip_path}")
     print(f"  Taille              : {zip_size_mb:.1f} Mo")
+    print(f"  Patch zip           : {patch_zip_path}")
+    print(f"  Taille patch        : {patch_size_kb:.1f} Ko")
+    print(f"  metadata.json       : {metadata_path}")
     print(f"  Contenu             : Python {python_version} + Tcl/Tk + pymupdf + Pillow + customtkinter")
     print(f"  Utilisation         : deziper + double-clic lancer.bat")
     print(f"{'=' * 60}\n")
@@ -393,5 +435,11 @@ if __name__ == "__main__":
         default=DEFAULT_PYTHON_VERSION,
         help=f"Version Python Embedded à utiliser (defaut : {DEFAULT_PYTHON_VERSION})",
     )
+    parser.add_argument(
+        "--full-reinstall",
+        action="store_true",
+        default=False,
+        help="Marquer requires_full_reinstall=true dans metadata.json (si site-packages/ ou python/ changent)",
+    )
     args = parser.parse_args()
-    build(args.python_version)
+    build(args.python_version, full_reinstall=args.full_reinstall)

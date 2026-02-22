@@ -93,11 +93,18 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 - `_get_install_dir()` : retourne `Path(__file__).parent` (portable, identique Windows et Linux depuis v0.4.6)
 - `_bootstrap()` : vérifie que fitz, customtkinter et PIL sont importables — affiche un message d'erreur et quitte si une dépendance est manquante (plus de création de venv depuis v0.4.6)
 
-### Mise à jour automatique (lignes ~80-110)
-- `check_update()` : thread daemon qui compare `version.txt` local vs GitHub raw
-- Repo : `MondeDesPossibles/pdf-header-tool`
-- Constante `VERSION` en tête du script + `GITHUB_REPO`
-- Mise à jour silencieuse : télécharge le nouveau `pdf_header.py` et remplace le fichier courant
+### Mise à jour automatique (depuis v0.4.6.1)
+- `_apply_pending_update()` : s'exécute **avant** `_bootstrap()` au démarrage — applique un patch
+  téléchargé lors du lancement précédent (déplace les fichiers de `_update_pending/` vers leur destination)
+- `check_update()` : thread daemon (non bloquant) lancé au démarrage
+- Repo : `MondeDesPossibles/pdf-header-tool` — constante `GITHUB_REPO`
+- Interroge l'**API GitHub Releases** (`/releases/latest`) — jamais depuis `main`
+- Si nouvelle version : télécharge `metadata.json` depuis les assets de la release
+- Si `requires_full_reinstall: false` : télécharge `app-patch.zip`, vérifie SHA256,
+  extrait dans `_update_pending/` → sera appliqué au **prochain démarrage**
+- Si `requires_full_reinstall: true` : log uniquement (futur : notification GUI Étape 4.7+)
+- Champ `delete` du manifest : fichiers à supprimer lors de l'application (renommages entre versions)
+- Tout échec réseau est silencieux — ne jamais bloquer le démarrage de l'app
 
 ### Constantes et fonctions module-level (v0.4.5)
 - `COLORS` : dict de toutes les couleurs hex de l'UI (arrière-plans, texte, accents, états cartes, overlay)
@@ -269,6 +276,41 @@ d'extraire ces fichiers de façon fiable depuis Linux.
 - Conservés dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
 - Ne font PAS partie de la distribution zip (plus nécessaires depuis le bundle complet)
 
+### Workflow de release (depuis v0.4.6.1)
+
+**Script `release.sh` (dev uniquement) :**
+```bash
+./release.sh X.Y.Z                   # release standard (sources Python uniquement)
+./release.sh X.Y.Z --full-reinstall  # si site-packages/ ou python/ ont changé
+```
+
+Le script automatise dans l'ordre :
+1. Mise à jour `VERSION` dans `pdf_header.py` et `version.txt`
+2. Mise à jour `BUILD_ID` (format `build-YYYY.MM.DD.NN`)
+3. Validation syntaxe Python (`ast.parse`)
+4. `git commit + tag vX.Y.Z + push origin main + push origin vX.Y.Z`
+5. `python3 build_dist.py` → génère dans `dist/` :
+   - `PDFHeaderTool-vX.Y.Z-windows.zip` (~40 MB — installation fraîche)
+   - `app-patch-vX.Y.Z.zip` (~50-300 KB — sources Python uniquement)
+   - `metadata.json` (version, flags, hashes)
+6. `gh release upload vX.Y.Z ...` (si `gh` CLI disponible, sinon instructions manuelles)
+
+**Format `metadata.json` (asset de chaque GitHub Release) :**
+```json
+{
+  "manifest_version": 1,
+  "version": "X.Y.Z",
+  "requires_full_reinstall": false,
+  "patch_zip": {"name": "app-patch-vX.Y.Z.zip", "sha256": "...", "size": 0},
+  "delete": []
+}
+```
+
+**GitHub Actions (`.github/workflows/release.yml`) :**
+- Déclenché sur push tag `v*.*.*`
+- Crée la GitHub Release avec release notes auto-générées depuis les commits
+- Pas de build sur CI (tcltk/ non versionné → build via release.sh en local)
+
 ### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
 
 Les fichiers `install.bat` et `install.py` sont conservés dans le repo pour référence
@@ -339,19 +381,17 @@ mais ne sont plus utilisés à partir de v0.4.6.
 - **Jamais appeler une méthode** qui dépend d'un widget avant que ce widget soit créé dans `_build_ui()`
 - Vérifier que les widgets mixtes `tkinter` + `customtkinter` sont compatibles
 
-### 5. Versioning
+### 5. Versioning et release
 
-- **Incrémenter `VERSION`** dans `pdf_header.py` à chaque étape complétée
-- **Mettre à jour `version.txt`** en même temps
 - **Format obligatoire du build global** : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`)
-- **À chaque itération**, incrémenter ce build global sur **tous** les fichiers de référence :
-  `pdf_header.py`, `install.py`, `install.bat`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
-- Conserver ce build visible dans les logs runtime (`Build install.bat: ...`, `install.py version: ...`, `pdf_header.py build ...`)
+- **À chaque itération**, incrémenter ce build global sur : `pdf_header.py`, `README.md`, `CLAUDE.md`, `ROADMAP.md`
+- Conserver ce build visible dans les logs runtime (`pdf_header.py build ...`)
 - **Cycle actuel** : repartir de `v0.0.1` et atteindre `v1.0.0` à l'étape 10 de `ROADMAP.md`
-- Rappeler à l'utilisateur de créer le tag git correspondant :
+- **Ne jamais créer de tag git manuellement** — utiliser `release.sh` qui gère tout :
   ```bash
-  git tag vX.Y.Z && git push origin vX.Y.Z
+  ./release.sh X.Y.Z
   ```
+- Passer `--full-reinstall` si `site-packages/` ou `python/` ont changé dans cette version
 
 ### 6. Ce que Claude Code ne doit JAMAIS faire
 

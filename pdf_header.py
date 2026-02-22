@@ -30,6 +30,35 @@ def _get_install_dir():
     """
     return Path(__file__).parent
 
+def _apply_pending_update():
+    """Applique un patch téléchargé lors du lancement précédent.
+    Doit être appelée avant _bootstrap() — ne lève jamais d'exception.
+    """
+    staging = _get_install_dir() / "_update_pending"
+    if not staging.exists():
+        return
+    try:
+        import shutil
+        install_dir = _get_install_dir()
+        for src in staging.iterdir():
+            if src.name.startswith("_"):
+                continue
+            dst = install_dir / src.name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dst))
+        delete_file = staging / "_delete.json"
+        if delete_file.exists():
+            for f in json.loads(delete_file.read_text()):
+                target = install_dir / f
+                if target.exists():
+                    target.unlink()
+        version_file = staging / "_target_version.txt"
+        if version_file.exists():
+            (install_dir / "version.txt").write_text(version_file.read_text())
+        shutil.rmtree(staging)
+    except Exception:
+        pass
+
 def _bootstrap():
     """Vérifie que les dépendances sont disponibles.
     Sur Windows : installées dans site-packages/ par setup.bat (lancer.bat).
@@ -47,6 +76,7 @@ def _bootstrap():
             print("Installez les dépendances : pip install pymupdf Pillow customtkinter")
         sys.exit(1)
 
+_apply_pending_update()
 _bootstrap()
 
 # ---------------------------------------------------------------------------
@@ -283,29 +313,81 @@ def _debug_log(msg: str):
         pass
 
 # ---------------------------------------------------------------------------
-# Mise à jour automatique
+# Mise à jour automatique (depuis v0.4.6.1)
+# Stratégie : GitHub Releases API + metadata.json + app-patch.zip
+# Le patch est téléchargé dans _update_pending/ et appliqué au prochain démarrage.
 # ---------------------------------------------------------------------------
 def _check_update_thread():
     try:
-        url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.txt"
-        req = urllib.request.Request(url, headers={"User-Agent": "PDFHeaderTool"})
+        # 1. Dernière release stable via GitHub Releases API
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        req = urllib.request.Request(
+            api_url,
+            headers={"User-Agent": "PDFHeaderTool", "Accept": "application/vnd.github+json"}
+        )
         with urllib.request.urlopen(req, timeout=TIMINGS["update_version_timeout"]) as r:
-            remote_version = r.read().decode().strip()
-        if remote_version == VERSION:
+            release = json.loads(r.read().decode())
+
+        tag_name = release.get("tag_name", "")
+        remote_version = tag_name.lstrip("v")
+        if not remote_version or remote_version == VERSION:
             return
-        script_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/pdf_header.py"
-        req2 = urllib.request.Request(script_url, headers={"User-Agent": "PDFHeaderTool"})
-        with urllib.request.urlopen(req2, timeout=TIMINGS["update_download_timeout"]) as r:
-            new_content = r.read()
-        import ast
-        ast.parse(new_content.decode())
-        script_path = Path(__file__).resolve()
-        tmp = script_path.with_suffix(".tmp")
-        tmp.write_bytes(new_content)
-        tmp.replace(script_path)
-        print(f"Mise à jour effectuée : {VERSION} → {remote_version}. Relancez l'application.")
+
+        # 2. Indexer les assets de la release
+        assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
+        meta_url = assets.get("metadata.json")
+        if not meta_url:
+            return  # Release sans metadata.json (ancien format) — ignorer
+
+        # 3. Télécharger metadata.json
+        req2 = urllib.request.Request(meta_url, headers={"User-Agent": "PDFHeaderTool"})
+        with urllib.request.urlopen(req2, timeout=TIMINGS["update_version_timeout"]) as r:
+            meta = json.loads(r.read().decode())
+
+        # 4. Vérifier si une réinstallation complète est requise
+        if meta.get("requires_full_reinstall", True):
+            _debug_log(f"UPDATE_FULL_REQUIRED {VERSION} -> {remote_version}")
+            return  # Futur : notification GUI (Étape 4.7+)
+
+        # 5. Télécharger app-patch.zip
+        patch_info = meta.get("patch_zip", {})
+        patch_name = patch_info.get("name", "")
+        patch_sha256 = patch_info.get("sha256", "")
+        patch_url = assets.get(patch_name)
+        if not patch_url:
+            return
+
+        req3 = urllib.request.Request(patch_url, headers={"User-Agent": "PDFHeaderTool"})
+        with urllib.request.urlopen(req3, timeout=TIMINGS["update_download_timeout"]) as r:
+            patch_data = r.read()
+
+        # 6. Vérifier SHA256
+        import hashlib
+        actual_sha256 = hashlib.sha256(patch_data).hexdigest()
+        if patch_sha256 and actual_sha256 != patch_sha256:
+            _debug_log(f"UPDATE_HASH_MISMATCH expected={patch_sha256} got={actual_sha256}")
+            return
+
+        # 7. Extraire dans staging
+        import zipfile, io
+        staging = INSTALL_DIR / "_update_pending"
+        if staging.exists():
+            import shutil
+            shutil.rmtree(staging)
+        staging.mkdir()
+        with zipfile.ZipFile(io.BytesIO(patch_data)) as zf:
+            zf.extractall(staging)
+
+        # 8. Écrire les métadonnées de contrôle
+        delete_list = meta.get("delete", [])
+        if delete_list:
+            (staging / "_delete.json").write_text(json.dumps(delete_list))
+        (staging / "_target_version.txt").write_text(remote_version)
+
+        _debug_log(f"UPDATE_STAGED {VERSION} -> {remote_version}")
+
     except Exception:
-        pass
+        pass  # Réseau indisponible ou release malformée — silencieux
 
 def check_update():
     t = threading.Thread(target=_check_update_thread, daemon=True)
