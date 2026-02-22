@@ -329,9 +329,10 @@ def load_config():
                 cfg["log_profile"] = "medium" if cfg.pop("debug_enabled") else "simple"
             elif "debug_enabled" in cfg:
                 cfg.pop("debug_enabled")
+            log_config.info(f"CONFIG_LOAD ok path={CONFIG_FILE}")
             return cfg
-        except Exception:
-            pass
+        except Exception as e:
+            log_config.error(f"CONFIG_LOAD_ERROR error={e}")
     return DEFAULT_CONFIG.copy()
 
 def save_config(cfg):
@@ -339,8 +340,9 @@ def save_config(cfg):
         INSTALL_DIR.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+        log_config.info("CONFIG_SAVE ok")
+    except Exception as e:
+        log_config.error(f"CONFIG_SAVE_ERROR error={e}")
 
 # ---------------------------------------------------------------------------
 # Système de logs multi-niveaux (Étape 4.6.3)
@@ -507,8 +509,10 @@ def _check_update_thread():
         remote_version = tag_name.lstrip("v")
         if not remote_version or remote_version == _RUNNING_VERSION:
             print(f"[{_ts()}] UPDATE_CHECK deja a jour")
+            log_update.info(f"UPDATE_CHECK_OK local={_RUNNING_VERSION} remote={remote_version}")
             return
         print(f"[{_ts()}] UPDATE_CHECK nouvelle version disponible: {remote_version}")
+        log_update.info(f"UPDATE_AVAILABLE local={_RUNNING_VERSION} remote={remote_version}")
 
         # 2. Indexer les assets de la release
         assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
@@ -569,12 +573,14 @@ def _check_update_thread():
 
         print(f"[{_ts()}] UPDATE_CHECK patch mis en attente: {_RUNNING_VERSION} -> {remote_version} (sera applique au prochain lancement)")
         _debug_log(f"UPDATE_STAGED {_RUNNING_VERSION} -> {remote_version}")
+        log_update.info(f"UPDATE_STAGED local={_RUNNING_VERSION} remote={remote_version}")
 
         if _update_staged_callback:
             _update_staged_callback(remote_version)
 
     except Exception as e:
         print(f"[{_ts()}] UPDATE_CHECK ERREUR: {e}")
+        log_update.error(f"UPDATE_CHECK_ERROR error={e}")
 
 _update_staged_callback = None  # callable(version: str) | None — défini par PDFHeaderApp
 
@@ -1546,6 +1552,7 @@ class PDFHeaderApp:
         self.pdf_files = [Path(p) for p in paths]
         self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        log_ui.info(f"OPEN_FILES count={len(self.pdf_files)}")
         self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
@@ -1560,6 +1567,7 @@ class PDFHeaderApp:
             return
         self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        log_ui.info(f"OPEN_FOLDER count={len(self.pdf_files)}")
         self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
@@ -1782,6 +1790,7 @@ class PDFHeaderApp:
         if self.doc:
             self.doc.close()
         self.doc = fitz.open(str(path))
+        log_pdf.info(f"PDF_OPEN file={path.name} pages={len(self.doc)} idx={self.idx}")
         # Lire les dims dès maintenant pour _recalc_ratio_from_preset()
         page0 = self.doc[0]
         self.page_w_pt = page0.rect.width
@@ -1978,6 +1987,7 @@ class PDFHeaderApp:
         out_path = out_dir / path.name
 
         header_text = self._get_header_text()
+        _t0_apply = time.perf_counter()
         color_float = hex_to_rgb_float(self.cfg["color_hex"])
         font_size   = max(self.var_size.get(), SIZES["font_size_min"])
         all_pages   = self.var_all_pages.get()
@@ -2013,6 +2023,11 @@ class PDFHeaderApp:
         bg_color   = hex_to_rgb_float(self.cfg.get("bg_color_hex", COLORS["bg_default"]))
         bg_opacity = max(0.0, min(1.0, self.var_bg_opacity.get()))
 
+        log_pdf.info(
+            f"PDF_PROCESS_START file={path.name} "
+            f"pages_mode={'all' if all_pages else 'first'} "
+            f"font={font_family} size={font_size} rotation={rotation}"
+        )
         try:
             doc_out = fitz.open(str(path))
             pages_to_process = range(len(doc_out)) if all_pages else [0]
@@ -2107,14 +2122,21 @@ class PDFHeaderApp:
 
             doc_out.save(str(out_path), garbage=4, deflate=True)
             doc_out.close()
+            log_pdf.info(
+                f"PDF_PROCESS_OK file={path.name} "
+                f"elapsed_ms={int((time.perf_counter() - _t0_apply) * 1000)} "
+                f"out={out_path.name}"
+            )
 
         except PermissionError:
+            log_pdf.error(f"PDF_PROCESS_ERROR file={path.name} error=PermissionError")
             messagebox.showerror("Erreur",
                 "Le fichier est ouvert dans un autre programme. Fermez-le et réessayez.")
             self.file_states[self.idx] = "erreur"
             self._refresh_all_cards()
             return
         except Exception as e:
+            log_pdf.error(f"PDF_PROCESS_ERROR file={path.name} error={e}")
             messagebox.showerror("Erreur", str(e))
             self.file_states[self.idx] = "erreur"
             self._refresh_all_cards()
@@ -2181,6 +2203,8 @@ class PDFHeaderApp:
         self._load_pdf()
 
     def _skip(self):
+        fname = self.pdf_files[self.idx].name if self.pdf_files else "?"
+        log_ui.info(f"PDF_SKIP file={fname} idx={self.idx}")
         self.file_states[self.idx] = "passe"
         next_idx = self._find_next_untreated()
         if next_idx is None:
