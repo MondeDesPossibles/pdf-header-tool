@@ -351,7 +351,7 @@ def build(python_version: str, full_reinstall: bool = False) -> None:
         "--abi", "cp311",
         "--only-binary=:all:",
         "--target", str(site_pkg_dir),
-        "pymupdf", "pillow", "customtkinter",
+        "pymupdf", "pillow", "customtkinter", "certifi",
     ]
     result = subprocess.run(pip_cmd, capture_output=True, text=True)
     if result.returncode != 0:

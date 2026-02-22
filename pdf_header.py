@@ -340,13 +340,23 @@ def _check_update_thread():
 
     try:
         print(f"[{_ts()}] UPDATE_CHECK version courante: {VERSION}")
+        # Contexte SSL : certifi si disponible (bundle inclus), sinon contexte système
+        import ssl
+        try:
+            import certifi
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+            print(f"[{_ts()}] UPDATE_CHECK SSL: certifi {certifi.__version__}")
+        except ImportError:
+            ssl_ctx = ssl.create_default_context()
+            print(f"[{_ts()}] UPDATE_CHECK SSL: contexte systeme (certifi absent)")
+
         # 1. Dernière release stable via GitHub Releases API
         api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
         req = urllib.request.Request(
             api_url,
             headers={"User-Agent": "PDFHeaderTool", "Accept": "application/vnd.github+json"}
         )
-        with urllib.request.urlopen(req, timeout=TIMINGS["update_version_timeout"]) as r:
+        with urllib.request.urlopen(req, timeout=TIMINGS["update_version_timeout"], context=ssl_ctx) as r:
             release = json.loads(r.read().decode())
 
         tag_name = release.get("tag_name", "")
@@ -365,7 +375,7 @@ def _check_update_thread():
 
         # 3. Télécharger metadata.json
         req2 = urllib.request.Request(meta_url, headers={"User-Agent": "PDFHeaderTool"})
-        with urllib.request.urlopen(req2, timeout=TIMINGS["update_version_timeout"]) as r:
+        with urllib.request.urlopen(req2, timeout=TIMINGS["update_version_timeout"], context=ssl_ctx) as r:
             meta = json.loads(r.read().decode())
 
         # 4. Vérifier si une réinstallation complète est requise
@@ -385,7 +395,7 @@ def _check_update_thread():
         print(f"[{_ts()}] UPDATE_CHECK telechargement patch: {patch_name}")
 
         req3 = urllib.request.Request(patch_url, headers={"User-Agent": "PDFHeaderTool"})
-        with urllib.request.urlopen(req3, timeout=TIMINGS["update_download_timeout"]) as r:
+        with urllib.request.urlopen(req3, timeout=TIMINGS["update_download_timeout"], context=ssl_ctx) as r:
             patch_data = r.read()
         print(f"[{_ts()}] UPDATE_CHECK patch telecharge: {len(patch_data)} octets")
 
