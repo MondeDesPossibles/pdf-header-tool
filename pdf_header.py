@@ -488,6 +488,34 @@ _setup_logger(_default_log_profile())
 # Stratégie : GitHub Releases API + metadata.json + app-patch.zip
 # Le patch est téléchargé dans _update_pending/ et appliqué au prochain démarrage.
 # ---------------------------------------------------------------------------
+
+def _version_gt(remote: str, local: str) -> bool:
+    """Retourne True si remote est strictement plus récent que local.
+
+    Formats supportés : X.Y.Z  /  X.Y.Z.W  /  X.Y.Z-beta.N  /  X.Y.Z.W-beta.N
+    Ordre : stable > beta > alpha pour une même base numérique.
+    Stdlib-only — aucune dépendance externe requise.
+    Note : à migrer dans app/update.py lors de l'Étape 4.7.
+    """
+    import re
+
+    def _parse(v: str):
+        m = re.match(
+            r'^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta)\.(\d+))?$',
+            v.strip()
+        )
+        if not m:
+            # Format inconnu → considérer comme très ancien pour ne pas déclencher d'update
+            return (0, 0, 0, 0, 0, 0)
+        nums = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4) or 0))
+        pre_order = {'alpha': 0, 'beta': 1}
+        pre_type = pre_order.get(m.group(5), 99) if m.group(5) else 99  # 99 = stable
+        pre_num = int(m.group(6)) if m.group(6) else 0
+        return (*nums, pre_type, pre_num)
+
+    return _parse(remote) > _parse(local)
+
+
 def _check_update_thread():
     import datetime
     def _ts():
@@ -529,7 +557,7 @@ def _check_update_thread():
 
         tag_name = release.get("tag_name", "")
         remote_version = tag_name.lstrip("v")
-        if not remote_version or remote_version == _RUNNING_VERSION:
+        if not remote_version or not _version_gt(remote_version, _RUNNING_VERSION):
             print(f"[{_ts()}] UPDATE_CHECK deja a jour")
             log_update.info(f"UPDATE_CHECK_OK local={_RUNNING_VERSION} remote={remote_version}")
             return

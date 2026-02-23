@@ -1054,10 +1054,11 @@ shortcuts Bureau/Menu Démarrer, associations de fichiers `.pdf`, désinstalleur
 ### Dettes techniques (avant v0.5.0)
 
 #### Comparaison de version par chaîne
-Dans `_check_update_thread()`, la comparaison `remote_version == _RUNNING_VERSION` est
-correcte pour le cas "déjà à jour". Validée jusqu'à 0.4.6.10. Si un ordre (`<`/`>`) est
-jamais introduit, utiliser `tuple(int(x) for x in v.split("."))` pour éviter la
-comparaison lexicographique (`"0.4.10" < "0.4.9"`). Non urgent actuellement.
+~~Dans `_check_update_thread()`, la comparaison `remote_version == _RUNNING_VERSION` était
+correcte pour le cas "déjà à jour". Non urgent actuellement.~~
+**Résolu (feat/multi-level-logging)** : remplacement par `_version_gt(remote, local)` (stdlib-only,
+gère X.Y.Z, X.Y.Z.W, X.Y.Z-beta.N). Empêche les downgrades (ex: remote=0.4.6.9 vs local=0.4.6.10-beta.1).
+À migrer dans `app/update.py` lors de l'Étape 4.7.
 
 #### `requires_full_reinstall: true` sans notification GUI
 Si une release nécessite une réinstallation complète, le thread abandonne silencieusement.
