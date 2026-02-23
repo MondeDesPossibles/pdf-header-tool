@@ -149,6 +149,7 @@ from app.services.font_service import (
 from app.services.layout_service import (
     canvas_to_ratio, ratio_to_canvas, ratio_to_pdf_pt, recalc_ratio_from_preset,
 )
+from app.services.pdf_service import insert_header
 
 
 # ---------------------------------------------------------------------------
@@ -1863,102 +1864,33 @@ class PDFHeaderApp:
             )
 
             for i in pages_to_process:
-                pg   = doc_out[i]
-                pg_w = pg.rect.width
-                pg_h = pg.rect.height
-                # y_pt = (1.0 - ratio_y) * pg_h → espace coords fitz (Y inversé vs tkinter)
-                # fitz_y = pg_h - y_pt → position absolue depuis le bas de la page
-                fitz_y = pg_h - y_pt
-
-                # Estimation largeur texte pour fond/cadre/soulignement
-                text_width = len(header_text) * font_size * SIZES["text_w_fallback"]  # fallback
-                if use_bg or use_frame or underline or _LOG_PROFILE == "full":
-                    try:
-                        if "fontfile" in font_args:
-                            font_obj = fitz.Font(fontfile=font_args["fontfile"])
-                        else:
-                            font_obj = fitz.Font(fontname=font_args.get("fontname", "cour"))
-                        text_width = font_obj.text_length(header_text, font_size)
-                    except Exception:
-                        pass
-
-                # half_h : demi-hauteur d'une ligne — sert à centrer texte/cadre/fond sur fitz_y
-                lineheight = line_spacing  # facteur multiplicateur de fontsize (ex: 1.2 → 1.2×12=14.4 pts)
-                half_h = font_size * lineheight / 2
-
-                # Fond et cadre (avant le texte) — centrés sur (x_pt, fitz_y)
-                if use_bg or use_frame:
-                    pad = frame_padding
-                    bg_rect = fitz.Rect(
-                        x_pt - text_width / 2 - pad,
-                        fitz_y - half_h - pad,
-                        x_pt + text_width / 2 + pad,
-                        fitz_y + half_h + pad
-                    )
-                    if use_bg:
-                        pg.draw_rect(bg_rect,
-                                     fill=bg_color,
-                                     fill_opacity=bg_opacity,
-                                     color=None,
-                                     width=0)
-                    if use_frame:
-                        dashes = "[3 3] 0" if frame_style == "dashed" else None
-                        pg.draw_rect(bg_rect,
-                                     color=frame_color,
-                                     width=frame_width,
-                                     stroke_opacity=frame_opacity,
-                                     fill=None,
-                                     dashes=dashes)
-
-                # half_w : min = moitié de page pour éviter troncature si texte long.
-                # L'alignement CENTER dans insert_textbox() centre le texte dans ce rect.
-                # Rect d'insertion du texte — centré sur (x_pt, fitz_y)
-                # y0 = fitz_y - half_h → insert_textbox remplit vers le bas sur font_size*lineheight
-                # → centre visuel du texte ≈ fitz_y, cohérent avec l'overlay (anchor="center")
-                half_w = max(pg_w / 2, text_width / 2 + 10)
-                text_rect = fitz.Rect(
-                    max(0, x_pt - half_w),
-                    fitz_y - half_h,
-                    min(pg_w, x_pt + half_w),
-                    fitz_y + half_h * 2   # marge extra en bas pour éviter toute troncature
-                )
-                _debug_log(
-                    f"  page[{i}] pg=({pg_w:.1f}x{pg_h:.1f}) "
-                    f"fitz_y={fitz_y:.1f} text_rect={text_rect}"
-                )
-
-                _remaining = pg.insert_textbox(
-                    text_rect,
+                pg = doc_out[i]
+                result = insert_header(
+                    pg,
                     header_text,
-                    fontsize=font_size,
-                    color=color_float,
-                    rotate=rotation,
-                    lineheight=lineheight,
-                    align=fitz.TEXT_ALIGN_CENTER,
-                    **font_args,
+                    x_pt, y_pt,
+                    font_args,
+                    font_size,
+                    line_spacing,
+                    color_float,
+                    rotation,
+                    use_bg, bg_color, bg_opacity,
+                    use_frame, frame_color, frame_width,
+                    frame_style, frame_padding, frame_opacity,
+                    underline,
                 )
                 log_pdf.debug(
                     f"PDF_INSERT_RESULT file={path.name} page={i} "
-                    f"page_dims=({pg_w:.1f},{pg_h:.1f}) "
-                    f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} fitz_y={fitz_y:.1f} "
-                    f"text_rect=[{text_rect.x0:.1f},{text_rect.y0:.1f},"
-                    f"{text_rect.x1:.1f},{text_rect.y1:.1f}] "
-                    f"text_w_est={text_width:.1f} "
-                    f"text_h_est={font_size * lineheight:.1f} "
-                    f"truncated={_remaining < 0} remaining_chars={max(0, -int(_remaining))} "
+                    f"page_dims=({pg.rect.width:.1f},{pg.rect.height:.1f}) "
+                    f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} fitz_y={result['fitz_y']:.1f} "
+                    f"text_rect=[{result['text_rect'].x0:.1f},{result['text_rect'].y0:.1f},"
+                    f"{result['text_rect'].x1:.1f},{result['text_rect'].y1:.1f}] "
+                    f"text_w_est={result['text_width']:.1f} "
+                    f"text_h_est={font_size * result['lineheight']:.1f} "
+                    f"truncated={result['truncated']} remaining_chars={max(0, -int(result['remaining_chars']))} "
                     f"click_ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
-                    f"applied_ratio=({x_pt / pg_w:.4f},{1 - fitz_y / pg_h:.4f})"
+                    f"applied_ratio=({x_pt / pg.rect.width:.4f},{1 - result['fitz_y'] / pg.rect.height:.4f})"
                 )
-
-                # Soulignement — centré sur x_pt
-                if underline:
-                    ul_y = fitz_y + font_size * SIZES["underline_offset"]
-                    pg.draw_line(
-                        fitz.Point(x_pt - text_width / 2, ul_y),
-                        fitz.Point(x_pt + text_width / 2, ul_y),
-                        color=color_float,
-                        width=max(0.5, font_size * SIZES["underline_width"])
-                    )
 
             doc_out.save(str(out_path), garbage=4, deflate=True)
             doc_out.close()
