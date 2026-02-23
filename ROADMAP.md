@@ -555,7 +555,19 @@ Déplacer depuis `pdf_header.py` :
 - `DATE_FORMATS`, `DATE_SOURCE_DISPLAY`, `DATE_SOURCE_INTERNAL`
 - `_HIDDEN_UI_FEATURES`
 
-Dans `pdf_header.py` : remplacer par `from app.constants import *` ou imports ciblés.
+Dans `pdf_header.py` : remplacer par des imports ciblés explicites :
+```python
+from app.constants import (
+    COLORS, SIZES, TIMINGS,
+    BUILTIN_FONTS, PRIORITY_FONTS,
+    POSITION_PRESETS, PRESET_LABELS,
+    DATE_FORMATS, DATE_SOURCE_DISPLAY, DATE_SOURCE_INTERNAL,
+    _HIDDEN_UI_FEATURES,
+)
+```
+
+**Critère de sortie** : syntaxe OK (`ast.parse`) + lancer l'app sur Linux + traiter un PDF test.
+**Rollback** : `git revert HEAD`.
 
 #### Sous-étape 2 — app/config.py
 **Risque : faible** (I/O fichier, pas de GUI)
@@ -568,6 +580,9 @@ Déplacer depuis `pdf_header.py` :
 
 Dans `pdf_header.py` : `from app.config import DEFAULT_CONFIG, load_config, save_config`.
 
+**Critère de sortie** : syntaxe OK + lancer l'app + charger/sauvegarder la config sans régression (vérifier `pdf_header_config.json` après modification d'un paramètre).
+**Rollback** : `git revert HEAD`.
+
 #### Sous-étape 3 — app/services/font_service.py + layout_service.py
 **Risque : faible** (fonctions pures sans dépendance GUI)
 
@@ -575,6 +590,9 @@ Créer `app/services/__init__.py` (vide).
 `font_service.py` : `hex_to_rgb_float`, `_get_font_dirs`, `_find_priority_fonts`, `_get_fitz_font_args`
 `layout_service.py` : extraire en fonctions pures `_canvas_to_ratio`, `_ratio_to_canvas`,
   `_ratio_to_pdf_pt`, `_recalc_ratio_from_preset` (actuellement méthodes de classe).
+
+**Critère de sortie** : syntaxe OK + lancer l'app + positionner un en-tête manuellement et via preset → vérifier que le ratio X/Y est identique avant/après extraction.
+**Rollback** : `git revert HEAD`.
 
 #### Sous-étape 4 — app/services/pdf_service.py
 **Risque : moyen** (extraction d'une partie de `_apply()`)
@@ -589,17 +607,31 @@ def insert_header(page, header_text, x_pt, y_pt, font_args, font_size,
 ```
 `_apply()` devient un orchestrateur qui appelle `pdf_service.insert_header()`.
 
+**Critère de sortie** : syntaxe OK + traiter un PDF test → ouvrir le PDF généré et vérifier visuellement que l'en-tête est identique à avant l'extraction.
+**Rollback** : `git revert HEAD`.
+
 #### Sous-étape 5 — app/update.py + app/models.py
 **Risque : moyen** (`_apply_pending_update` doit rester disponible très tôt)
 
 `app/update.py` : `_version_gt`, `_check_update_thread`, `check_update`.
-**Attention** : `_apply_pending_update()` est appelée avant les imports lourds — vérifier
-que l'import de `app.update` est possible à ce stade du bootstrap.
+
+**Invariant bootstrap (non-négociable)** : l'ordre d'appel dans `pdf_header.py` est strict :
+```
+_apply_pending_update()   # doit rester AVANT tout import lourd
+_bootstrap()
+import tkinter, customtkinter, PIL, fitz  # imports lourds
+```
+`_apply_pending_update()` peut être déplacée dans `app/update.py` uniquement si l'import
+de ce module ne déclenche pas lui-même un import lourd (tkinter, customtkinter, fitz) au
+niveau module. À vérifier impérativement avant de merger cette sous-étape.
 
 `app/models.py` : dataclasses préparatoires (non encore utilisées) :
 - `FontDescriptor(name, path, is_builtin)`
 - `Position(ratio_x, ratio_y, preset_key, margin_x_pt, margin_y_pt)`
 - `InsertResult(remaining_chars, truncated, text_rect, applied_ratio_x, applied_ratio_y)`
+
+**Critère de sortie** : syntaxe OK + lancer l'app + vérifier que le check_update() se déclenche au démarrage sans erreur (log `APP_START` présent dans `pdf_header_app.log`).
+**Rollback** : `git revert HEAD`.
 
 #### Sous-étape 6 — app/ui/ + allègement pdf_header.py
 **Risque : élevé** (restructuration de la classe principale)
@@ -611,6 +643,10 @@ que l'import de `app.update` est possible à ce stade du bootstrap.
 
 `pdf_header.py` allégé (~15 lignes) : bootstrap + import PDFHeaderApp + main().
 Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
+
+**Critère de sortie** : syntaxe OK sur tous les modules `app/**/*.py` + lancer l'app sur Linux + parcours complet (ouvrir des PDFs, positionner, appliquer, passer) sans régression. Vérifier `pdf_header_app.log` et `pdf_header_errors.log`.
+**Test de régression spécifique** : tester avec un PDF comportant `/Rotate` (B-002) et avec une police système (B-001) pour détecter toute régression introduite par le découpage.
+**Rollback** : `git revert HEAD` ou, si la régression touche plusieurs commits, revenir au tag de la sous-étape 5.
 
 ---
 

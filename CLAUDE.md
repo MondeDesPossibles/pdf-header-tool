@@ -366,8 +366,8 @@ Le script automatise dans l'ordre :
 
 ### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
 
-Les fichiers `install.bat` et `install.py` sont conservés dans le repo pour référence
-mais ne sont plus utilisés à partir de v0.4.6.
+Les fichiers `install.bat` et `install.py` ne sont plus dans le repo (supprimés — absents depuis v0.4.6+).
+Ils ne sont plus utilisés et ne font pas partie de la distribution.
 
 ---
 
