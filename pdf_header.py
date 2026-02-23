@@ -142,105 +142,8 @@ from app.constants import (
     DATE_FORMATS, DATE_SOURCE_DISPLAY, DATE_SOURCE_INTERNAL,
     _HIDDEN_UI_FEATURES,
 )
+from app.config import DEFAULT_CONFIG, load_config, save_config
 
-DEFAULT_CONFIG = {
-    # Composition du texte
-    "use_filename"   : True,
-    "use_prefix"     : False,
-    "prefix_text"    : "",
-    "use_suffix"     : False,
-    "suffix_text"    : "",
-    "use_custom"     : False,
-    "custom_text"    : "",
-    # Date
-    "use_date"       : False,
-    "date_position"  : "suffix",     # "prefix" | "suffix"
-    "date_source"    : "today",      # "today" | "file_mtime"
-    "date_format"    : "%d/%m/%Y",
-    # Typographie
-    "color_hex"      : COLORS["text_default"],
-    "font_family"    : "Courier",
-    "font_file"      : None,         # None = builtin, sinon chemin absolu (str)
-    "font_size"      : 8,
-    "bold"           : False,
-    "italic"         : False,
-    "underline"      : False,
-    "letter_spacing" : 0.0,          # stocké, non appliqué au PDF en v0.4.0
-    "line_spacing"   : 1.2,
-    # Position
-    "preset_position": "tr",
-    "margin_x_pt"    : 20.0,
-    "margin_y_pt"    : 20.0,
-    "last_x_ratio"   : 0.85,
-    "last_y_ratio"   : 0.03,
-    # Rotation
-    "rotation"       : 0,            # 0 | 90 | 180 | 270
-    # Cadre
-    "use_frame"      : False,
-    "frame_color_hex": COLORS["frame_default"],
-    "frame_width"    : 1.0,
-    "frame_style"    : "solid",      # "solid" | "dashed"
-    "frame_padding"  : 3.0,
-    "frame_opacity"  : 1.0,
-    # Fond
-    "use_bg"         : False,
-    "bg_color_hex"   : COLORS["bg_default"],
-    "bg_opacity"     : 0.8,
-    # Application
-    "all_pages"      : True,
-    "ui_font_size"   : 12,
-    "log_profile"    : "simple",     # "simple" | "medium" | "full"
-}
-
-def load_config():
-    """Charge la config JSON depuis INSTALL_DIR, applique les valeurs par défaut de DEFAULT_CONFIG,
-    migre les anciens formats (text_mode < v0.4.0, debug_enabled < v0.4.6.11).
-    Retourne le dict cfg complet. Retourne une copie de DEFAULT_CONFIG en cas d'erreur.
-    """
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            for k, v in DEFAULT_CONFIG.items():
-                cfg.setdefault(k, v)
-            # Migration depuis format < v0.4.0
-            if "text_mode" in cfg:
-                old_mode = cfg.pop("text_mode", "nom")
-                old_pfx  = cfg.pop("prefixe",   "")
-                old_sfx  = cfg.pop("suffixe",   "")
-                old_cst  = cfg.pop("custom",    "")
-                if old_mode == "prefixe" and old_pfx:
-                    cfg["use_prefix"]  = True
-                    cfg["prefix_text"] = old_pfx
-                elif old_mode == "suffixe" and old_sfx:
-                    cfg["use_suffix"]  = True
-                    cfg["suffix_text"] = old_sfx
-                elif old_mode == "custom":
-                    cfg["use_custom"]  = True
-                    cfg["custom_text"] = old_cst
-                cfg.setdefault("use_filename", old_mode != "custom")
-            # Migration debug_enabled (bool) → log_profile (str) depuis v0.4.6.11
-            if "debug_enabled" in cfg and "log_profile" not in cfg:
-                cfg["log_profile"] = "medium" if cfg.pop("debug_enabled") else "simple"
-            elif "debug_enabled" in cfg:
-                cfg.pop("debug_enabled")
-            log_config.info(f"CONFIG_LOAD ok path={CONFIG_FILE}")
-            return cfg
-        except Exception as e:
-            log_config.error(f"CONFIG_LOAD_ERROR error={e}")
-    return DEFAULT_CONFIG.copy()
-
-def save_config(cfg):
-    """Sauvegarde le dict cfg dans pdf_header_config.json (INSTALL_DIR).
-    Ne lève pas d'exception — log en cas d'erreur d'écriture.
-    """
-    try:
-        INSTALL_DIR.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log_config.info("CONFIG_SAVE ok")
-    except Exception as e:
-        log_config.error(f"CONFIG_SAVE_ERROR error={e}")
 
 # ---------------------------------------------------------------------------
 # Système de logs multi-niveaux (Étape 4.6.3)
@@ -640,7 +543,7 @@ class PDFHeaderApp:
         self.root      = root
         self.pdf_files = list(pdf_files) if pdf_files else []
         self.idx       = 0
-        self.cfg       = load_config()
+        self.cfg       = load_config(INSTALL_DIR)
 
         _setup_logger(self.cfg.get("log_profile", _default_log_profile()))
         _log_session_start()
@@ -2216,7 +2119,7 @@ class PDFHeaderApp:
             "bg_opacity":      bg_opacity,
             "all_pages":       all_pages,
         })
-        save_config(self.cfg)
+        save_config(self.cfg, INSTALL_DIR)
 
         self.file_states[self.idx] = "traite"
         next_idx = self._find_next_untreated()
