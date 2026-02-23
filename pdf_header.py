@@ -28,6 +28,8 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+from app.update import apply_pending_update, check_update, set_staged_callback
+
 # ---------------------------------------------------------------------------
 # Bootstrap : modèle portable (Étape 4.6+)
 # ---------------------------------------------------------------------------
@@ -37,68 +39,6 @@ def _get_install_dir():
     La config, les logs et les polices temporaires sont stockés ici.
     """
     return Path(__file__).parent
-
-def _apply_pending_update():
-    """Applique un patch téléchargé lors du lancement précédent.
-    Doit être appelée avant _bootstrap() — ne lève jamais d'exception.
-    """
-    global _RUNNING_VERSION
-    import datetime
-    def _ts():
-        return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    staging = _get_install_dir() / "_update_pending"
-    if not staging.exists():
-        return
-    print(f"[{_ts()}] UPDATE_APPLY dossier en attente detecte")
-    try:
-        import shutil
-        install_dir = _get_install_dir()
-        moved = []
-        for src in staging.iterdir():
-            if src.name.startswith("_"):
-                continue
-            dst = install_dir / src.name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(dst))
-            moved.append(src.name)
-        for name in moved:
-            print(f"[{_ts()}] UPDATE_APPLY fichier applique: {name}")
-        delete_file = staging / "_delete.json"
-        if delete_file.exists():
-            for f in json.loads(delete_file.read_text()):
-                target = install_dir / f
-                if target.exists():
-                    target.unlink()
-                    print(f"[{_ts()}] UPDATE_APPLY fichier supprime: {f}")
-        version_file = staging / "_target_version.txt"
-        new_version = None
-        if version_file.exists():
-            new_version = version_file.read_text().strip()
-            (install_dir / "version.txt").write_text(version_file.read_text())
-        shutil.rmtree(staging)
-        if new_version:
-            _RUNNING_VERSION = new_version
-            print(f"[{_ts()}] UPDATE_APPLY succes — version appliquee: {new_version}")
-            # Redémarrer immédiatement : le patch est sur disque mais le process
-            # en cours a déjà chargé l'ancien code en mémoire. Le restart charge
-            # la nouvelle version dès ce lancement (et non au suivant).
-            print(f"[{_ts()}] UPDATE_APPLY redemarrage pour charger v{new_version}...")
-            try:
-                if sys.platform == "win32":
-                    subprocess.Popen(
-                        [sys.executable] + sys.argv,
-                        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW
-                    )
-                else:
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
-                sys.exit(0)
-            except Exception as restart_err:
-                print(f"[{_ts()}] UPDATE_APPLY redemarrage impossible: {restart_err} — nouvelle version active au prochain lancement")
-        else:
-            print(f"[{_ts()}] UPDATE_APPLY succes")
-    except Exception as e:
-        print(f"[{_ts()}] UPDATE_APPLY ERREUR: {e}")
 
 def _bootstrap():
     """Vérifie que les dépendances sont disponibles.
@@ -117,7 +57,9 @@ def _bootstrap():
             print("Installez les dépendances : pip install pymupdf Pillow customtkinter")
         sys.exit(1)
 
-_apply_pending_update()
+_new_v = apply_pending_update(_get_install_dir())
+if _new_v:
+    _RUNNING_VERSION = _new_v
 _bootstrap()
 
 # ---------------------------------------------------------------------------
@@ -291,170 +233,6 @@ def _global_exception_handler(exc_type, exc_value, exc_tb) -> None:
 sys.excepthook = _global_exception_handler
 _setup_logger(_default_log_profile())
 
-# ---------------------------------------------------------------------------
-# Mise à jour automatique (depuis v0.4.6.1)
-# Stratégie : GitHub Releases API + metadata.json + app-patch.zip
-# Le patch est téléchargé dans _update_pending/ et appliqué au prochain démarrage.
-# ---------------------------------------------------------------------------
-
-def _version_gt(remote: str, local: str) -> bool:
-    """Retourne True si remote est strictement plus récent que local.
-
-    Formats supportés : X.Y.Z  /  X.Y.Z.W  /  X.Y.Z-beta.N  /  X.Y.Z.W-beta.N
-    Ordre : stable > beta > alpha pour une même base numérique.
-    Stdlib-only — aucune dépendance externe requise.
-    Note : à migrer dans app/update.py lors de l'Étape 4.7.
-    """
-    import re
-
-    def _parse(v: str):
-        m = re.match(
-            r'^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta)\.(\d+))?$',
-            v.strip()
-        )
-        if not m:
-            # Format inconnu → considérer comme très ancien pour ne pas déclencher d'update
-            return (0, 0, 0, 0, 0, 0)
-        nums = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4) or 0))
-        pre_order = {'alpha': 0, 'beta': 1}
-        pre_type = pre_order.get(m.group(5), 99) if m.group(5) else 99  # 99 = stable
-        pre_num = int(m.group(6)) if m.group(6) else 0
-        return (*nums, pre_type, pre_num)
-
-    return _parse(remote) > _parse(local)
-
-
-def _check_update_thread():
-    """Thread daemon de vérification de mise à jour via GitHub Releases API.
-
-    Interroge l'API selon le canal (release→/releases/latest, beta→/releases[0]).
-    Si nouvelle version disponible : télécharge metadata.json puis app-patch-vX.Y.Z.zip,
-    vérifie SHA256, extrait dans _update_pending/.
-    Silencieux en cas d'erreur réseau (ne bloque jamais le démarrage de l'app).
-    """
-    import datetime
-    def _ts():
-        return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    try:
-        print(f"[{_ts()}] UPDATE_CHECK version courante: {_RUNNING_VERSION}")
-        log_update.debug(f"UPDATE_CHECK_START version={_RUNNING_VERSION} channel={CHANNEL}")
-        # Contexte SSL : certifi si disponible (bundle inclus), sinon contexte système
-        import ssl
-        try:
-            import certifi
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-            print(f"[{_ts()}] UPDATE_CHECK SSL: certifi {certifi.__version__}")
-        except ImportError:
-            ssl_ctx = ssl.create_default_context()
-            print(f"[{_ts()}] UPDATE_CHECK SSL: contexte systeme (certifi absent)")
-
-        # 1. Dernière release via GitHub Releases API (selon le canal)
-        #    "release" → /releases/latest  (stable uniquement, ignore les pre-releases)
-        #    "beta"    → /releases          (toutes releases, pre-releases incluses)
-        print(f"[{_ts()}] UPDATE_CHECK canal: {CHANNEL}")
-        if CHANNEL == "beta":
-            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
-        else:
-            api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        req = urllib.request.Request(
-            api_url,
-            headers={"User-Agent": "PDFHeaderTool", "Accept": "application/vnd.github+json"}
-        )
-        with urllib.request.urlopen(req, timeout=TIMINGS["update_version_timeout"], context=ssl_ctx) as r:
-            data = json.loads(r.read().decode())
-
-        # Canal beta : data est une liste → prendre la première (la plus récente)
-        # Canal release : data est l'objet release directement
-        release = data[0] if CHANNEL == "beta" and isinstance(data, list) else data
-        if not release:
-            return
-
-        tag_name = release.get("tag_name", "")
-        remote_version = tag_name.lstrip("v")
-        if not remote_version or not _version_gt(remote_version, _RUNNING_VERSION):
-            print(f"[{_ts()}] UPDATE_CHECK deja a jour")
-            log_update.info(f"UPDATE_CHECK_OK local={_RUNNING_VERSION} remote={remote_version}")
-            return
-        print(f"[{_ts()}] UPDATE_CHECK nouvelle version disponible: {remote_version}")
-        log_update.info(f"UPDATE_AVAILABLE local={_RUNNING_VERSION} remote={remote_version}")
-
-        # 2. Indexer les assets de la release
-        assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
-        meta_url = assets.get("metadata.json")
-        if not meta_url:
-            print(f"[{_ts()}] UPDATE_CHECK release sans metadata.json — ignore")
-            return
-
-        # 3. Télécharger metadata.json
-        req2 = urllib.request.Request(meta_url, headers={"User-Agent": "PDFHeaderTool"})
-        with urllib.request.urlopen(req2, timeout=TIMINGS["update_version_timeout"], context=ssl_ctx) as r:
-            meta = json.loads(r.read().decode())
-
-        # 4. Vérifier si une réinstallation complète est requise
-        if meta.get("requires_full_reinstall", True):
-            print(f"[{_ts()}] UPDATE_CHECK reinstallation complete requise — ignore (prevu 4.7+)")
-            _debug_log(f"UPDATE_FULL_REQUIRED {_RUNNING_VERSION} -> {remote_version}")
-            return
-
-        # 5. Télécharger app-patch.zip
-        patch_info = meta.get("patch_zip", {})
-        patch_name = patch_info.get("name", "")
-        patch_sha256 = patch_info.get("sha256", "")
-        patch_url = assets.get(patch_name)
-        if not patch_url:
-            print(f"[{_ts()}] UPDATE_CHECK patch absent des assets de la release: {patch_name}")
-            return
-        print(f"[{_ts()}] UPDATE_CHECK telechargement patch: {patch_name}")
-
-        req3 = urllib.request.Request(patch_url, headers={"User-Agent": "PDFHeaderTool"})
-        with urllib.request.urlopen(req3, timeout=TIMINGS["update_download_timeout"], context=ssl_ctx) as r:
-            patch_data = r.read()
-        print(f"[{_ts()}] UPDATE_CHECK patch telecharge: {len(patch_data)} octets")
-
-        # 6. Vérifier SHA256
-        import hashlib
-        actual_sha256 = hashlib.sha256(patch_data).hexdigest()
-        if patch_sha256 and actual_sha256 != patch_sha256:
-            print(f"[{_ts()}] UPDATE_CHECK ERREUR sha256 — patch rejete (attendu={patch_sha256[:12]}... recu={actual_sha256[:12]}...)")
-            _debug_log(f"UPDATE_HASH_MISMATCH expected={patch_sha256} got={actual_sha256}")
-            return
-
-        # 7. Extraire dans staging
-        import zipfile, io
-        staging = INSTALL_DIR / "_update_pending"
-        if staging.exists():
-            import shutil
-            shutil.rmtree(staging)
-        staging.mkdir()
-        with zipfile.ZipFile(io.BytesIO(patch_data)) as zf:
-            zf.extractall(staging)
-
-        # 8. Écrire les métadonnées de contrôle
-        delete_list = meta.get("delete", [])
-        if delete_list:
-            (staging / "_delete.json").write_text(json.dumps(delete_list))
-        (staging / "_target_version.txt").write_text(remote_version)
-
-        print(f"[{_ts()}] UPDATE_CHECK patch mis en attente: {_RUNNING_VERSION} -> {remote_version} (sera applique au prochain lancement)")
-        _debug_log(f"UPDATE_STAGED {_RUNNING_VERSION} -> {remote_version}")
-        log_update.info(f"UPDATE_STAGED local={_RUNNING_VERSION} remote={remote_version}")
-
-        if _update_staged_callback:
-            _update_staged_callback(remote_version)
-
-    except Exception as e:
-        print(f"[{_ts()}] UPDATE_CHECK ERREUR: {e}")
-        log_update.error(f"UPDATE_CHECK_ERROR error={e}")
-
-_update_staged_callback = None  # callable(version: str) | None — défini par PDFHeaderApp
-
-def check_update():
-    """Lance _check_update_thread() comme thread daemon non bloquant.
-    Appelée au démarrage de l'app, après _bootstrap() et _setup_logger().
-    """
-    t = threading.Thread(target=_check_update_thread, daemon=True)
-    t.start()
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +283,7 @@ class PDFHeaderApp:
         self._build_ui()
         self.root.update_idletasks()
 
-        global _update_staged_callback
-        _update_staged_callback = lambda v: self.root.after(0, lambda: self._show_update_notice(v))
+        set_staged_callback(lambda v: self.root.after(0, lambda: self._show_update_notice(v)))
 
         if self.pdf_files:
             self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
@@ -1993,7 +1770,7 @@ class PDFHeaderApp:
 # ---------------------------------------------------------------------------
 def main():
     print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
-    check_update()
+    check_update(_RUNNING_VERSION, CHANNEL, GITHUB_REPO, INSTALL_DIR, TIMINGS)
     log_app.info(f"APP_LAUNCH version={VERSION} build={BUILD_ID}")
 
     pdf_files = []
