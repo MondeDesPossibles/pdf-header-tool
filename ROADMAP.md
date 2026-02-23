@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.4.6
-# Build   : build-2026.02.22.03
+# Build   : build-2026.02.23.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -537,6 +537,80 @@ if __name__ == "__main__":
 - Mettre à jour la section Architecture complète avec la nouvelle arborescence
 - Supprimer la contrainte "fichier unique"
 - Documenter les méthodes clés par module
+
+### Ordre d'implémentation (sous-étapes)
+
+Chaque sous-étape doit :
+1. Vérifier syntaxe : `python3 -c "import ast; ast.parse(open('pdf_header.py').read())"`
+2. Lancer l'app sur Linux et traiter un PDF de test avant de merger
+3. Être commitée séparément pour faciliter le débogage
+
+#### Sous-étape 1 — app/constants.py
+**Risque : nul** (constantes pures, aucune logique)
+
+Créer `app/__init__.py` (vide) et `app/constants.py`.
+Déplacer depuis `pdf_header.py` :
+- `COLORS`, `SIZES`, `TIMINGS` (Étape 4.5)
+- `BUILTIN_FONTS`, `PRIORITY_FONTS`, `POSITION_PRESETS`, `PRESET_LABELS`
+- `DATE_FORMATS`, `DATE_SOURCE_DISPLAY`, `DATE_SOURCE_INTERNAL`
+- `_HIDDEN_UI_FEATURES`
+
+Dans `pdf_header.py` : remplacer par `from app.constants import *` ou imports ciblés.
+
+#### Sous-étape 2 — app/config.py
+**Risque : faible** (I/O fichier, pas de GUI)
+
+Créer `app/config.py`.
+Déplacer depuis `pdf_header.py` :
+- `DEFAULT_CONFIG`
+- `load_config()` (avec la migration debug_enabled → log_profile)
+- `save_config(cfg)`
+
+Dans `pdf_header.py` : `from app.config import DEFAULT_CONFIG, load_config, save_config`.
+
+#### Sous-étape 3 — app/services/font_service.py + layout_service.py
+**Risque : faible** (fonctions pures sans dépendance GUI)
+
+Créer `app/services/__init__.py` (vide).
+`font_service.py` : `hex_to_rgb_float`, `_get_font_dirs`, `_find_priority_fonts`, `_get_fitz_font_args`
+`layout_service.py` : extraire en fonctions pures `_canvas_to_ratio`, `_ratio_to_canvas`,
+  `_ratio_to_pdf_pt`, `_recalc_ratio_from_preset` (actuellement méthodes de classe).
+
+#### Sous-étape 4 — app/services/pdf_service.py
+**Risque : moyen** (extraction d'une partie de `_apply()`)
+
+Créer `app/services/pdf_service.py` avec une fonction pure :
+```python
+def insert_header(page, header_text, x_pt, y_pt, font_args, font_size,
+                  line_spacing, color_float, rotation, use_bg, bg_color,
+                  bg_opacity, use_frame, frame_color, frame_width, frame_style,
+                  frame_padding, frame_opacity, underline) -> int:
+    """Insère l'en-tête sur une page PyMuPDF. Retourne remaining_chars."""
+```
+`_apply()` devient un orchestrateur qui appelle `pdf_service.insert_header()`.
+
+#### Sous-étape 5 — app/update.py + app/models.py
+**Risque : moyen** (`_apply_pending_update` doit rester disponible très tôt)
+
+`app/update.py` : `_version_gt`, `_check_update_thread`, `check_update`.
+**Attention** : `_apply_pending_update()` est appelée avant les imports lourds — vérifier
+que l'import de `app.update` est possible à ce stade du bootstrap.
+
+`app/models.py` : dataclasses préparatoires (non encore utilisées) :
+- `FontDescriptor(name, path, is_builtin)`
+- `Position(ratio_x, ratio_y, preset_key, margin_x_pt, margin_y_pt)`
+- `InsertResult(remaining_chars, truncated, text_rect, applied_ratio_x, applied_ratio_y)`
+
+#### Sous-étape 6 — app/ui/ + allègement pdf_header.py
+**Risque : élevé** (restructuration de la classe principale)
+
+`app/ui/file_panel.py` : `_build_file_panel`, `_populate_file_panel`, `_create_file_card`,
+  `_refresh_card`, `_refresh_all_cards`, `_refresh_file_counter`.
+`app/ui/sidebar.py` : `_build_sidebar`, `_section`, tous les callbacks de la sidebar.
+`app/ui/main_window.py` : `PDFHeaderApp` (lifecycle, canvas, _apply, navigation).
+
+`pdf_header.py` allégé (~15 lignes) : bootstrap + import PDFHeaderApp + main().
+Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
 
 ---
 

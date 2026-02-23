@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.22.03
+# Build   : build-2026.02.23.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -120,14 +120,19 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 - `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
 - `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
 - `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
+- `PRESET_LABELS` : symboles Unicode pour les boutons de la grille 3×3 (↖↑↗←·→↙↓↘)
 - `DATE_FORMATS` : 8 formats de date prédéfinis `[(strftime_str, exemple), ...]`
+- `DATE_SOURCE_DISPLAY` : `{clé_interne → libellé_UI}` — mappe les valeurs de `date_source` vers leur affichage français ("today" → "Date du jour", "file_mtime" → "Date de création fichier")
+- `DATE_SOURCE_INTERNAL` : inverse de `DATE_SOURCE_DISPLAY` (parsing UI → clé interne)
+- `_HIDDEN_UI_FEATURES` : set des features présentes dans le code mais masquées dans l'UI en v0.4.x (letter_spacing, line_spacing, position_grid, margins, rotation, frame, background). Consulté dans `_build_sidebar()` et les callbacks d'options pour décider quels widgets construire.
 - `_get_font_dirs()` : retourne les dossiers de polices selon la plateforme
 - `_find_priority_fonts()` : lookup ciblé (pas de scan exhaustif) → `{display_name: Path}`
 - `_get_fitz_font_args(family, font_file, bold, italic)` : retourne `{"fontname": "cour"}` (built-in) ou `{"fontfile": str(path), "fontname": "F0"}` (système)
 
 ### Config persistante
 - Fichier : `pdf_header_config.json` dans `INSTALL_DIR`
-- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `debug_enabled`
+- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `log_profile`
+- Note : `debug_enabled` (bool, < v0.4.6.11) remplacé par `log_profile` ("simple"|"medium"|"full") lors de l'Étape 4.6.3. Migration automatique dans `load_config()`.
 - Migration automatique depuis le format < v0.4.0 : ancienne clé `text_mode` → nouvelles clés `use_filename`/`use_custom` etc. (dans `load_config()`)
 - La position est stockée en **ratio (0.0 à 1.0)** de la page pour être indépendante de la résolution
 
@@ -141,7 +146,7 @@ Interface principale. Cycle de vie :
 - `_load_system_fonts()` : cherche les polices PRIORITY_FONTS sur disque, **doit être appelée avant `_build_ui()`**
 - `_build_ui()` : construit topbar + sidebar scrollable (`CTkScrollableFrame` dans outer frame 270px) + canvas + bottombar
 - `_section(parent, label)` : crée un header de section ALLCAPS dans la sidebar (converti de closure en méthode)
-- `_build_sidebar(parent)` : 9 sections — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION (grille 3×3), ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU
+- `_build_sidebar(parent)` : 9 sections dans le code — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION, ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU. En v0.4.x, seules ~4 sont visibles : ROTATION, CADRE, FOND et les sous-options espacement/grille/marges sont masquées via `_HIDDEN_UI_FEATURES`.
 - `_render_preview()` : convertit page PDF → image PIL → ImageTk, calcule scale + offsets
 - `_draw_overlay()` : dessine croix + aperçu texte avec rotation/bg/cadre approximatifs sur le canvas
 - `_on_click()` : stocke la position en ratio X/Y, puis `preset_position = "custom"`
@@ -365,16 +370,9 @@ mais ne sont plus utilisés à partir de v0.4.6.
 
 ---
 
-## Corrections à apporter (avant livraison)
-- **Croix de positionnement** : indique actuellement le coin supérieur-gauche de la zone de texte.
-  Objectif : la croix doit marquer le **centre géométrique** de la zone d'insertion.
-  Implémentation : estimer `text_w` via `fitz.Font.text_length()` et `text_h` via `nb_lignes × font_size × line_spacing`,
-  puis centrer le rect autour du point cliqué : `[x_pt - text_w/2, y_pt - text_h/2, x_pt + text_w/2, y_pt + text_h/2]`.
-  Mettre à jour `_draw_overlay()` en conséquence pour que l'aperçu soit lui aussi centré sur la croix.
-- **Libellé `date_source`** : la valeur `"file_mtime"` (interne) ne doit jamais être affichée dans l'UI.
-  Remplacer le libellé affiché par "Date de création fichier" tout en conservant la clé interne `"file_mtime"`.
-
 ## Problèmes connus et corrections déjà apportées
+- **Croix de positionnement centrée** (v0.4.6.11) : `_draw_overlay()` utilise `anchor="center"` sur le canvas ; `_apply()` centre le rect PDF via `fitz.Font.text_length()` et `half_h = font_size * line_spacing / 2`. Overlay et insertion PDF sont cohérents.
+- **Libellé `date_source`** (v0.4.6.11) : `DATE_SOURCE_DISPLAY` dict mappe `"file_mtime"` → `"Date de création fichier"` dans l'UI. La clé interne `"file_mtime"` est conservée dans la config.
 - `_draw_overlay()` appelée avant que `self.canvas` existe → guard `if not hasattr(self, 'canvas'): return`
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
@@ -384,6 +382,8 @@ mais ne sont plus utilisés à partir de v0.4.6.
 - `angle=rotation` sur `canvas.create_text()` → protégé dans `try/except tk.TclError` pour compatibilité Tk 8.6+
 - Frames masquables (date/cadre/fond) : réinsertion via `pack(after=ref_widget)` et non `pack()` seul pour éviter le déplacement en fin de sidebar
 - Champs numériques marge/épaisseur : `tk.StringVar` (pas `DoubleVar`) pour éviter `TclError` quand l'utilisateur vide le champ — valeur parsée avec `try/float()` + fallback
+- **[B-001 — open] Police système introuvable** (v0.4.6.11) : si `cfg["font_file"]` est `None` ou le fichier absent du disque, `_get_fitz_font_args()` passe `fontfile=None` à fitz → erreur "need font file or buffer". Fix prévu : valider l'existence du fichier avant `insert_textbox()`, fallback sur Courier avec `log_font.warning`. Voir BUGS.md.
+- **[B-002 — open] En-tête mal positionnée sur PDFs avec `/Rotate`** (v0.4.6.11) : PyMuPDF `page.rect` est déjà pivoté par la rotation de la page, mais `insert_textbox()` travaille dans l'espace de coordonnées pré-rotation → décalage et rotation parasite. Fix prévu : lire `page.rotation`, appliquer une compensation matricielle ou recalculer `x_pt`/`y_pt`. Voir BUGS.md.
 
 ---
 
