@@ -143,6 +143,12 @@ from app.constants import (
     _HIDDEN_UI_FEATURES,
 )
 from app.config import DEFAULT_CONFIG, load_config, save_config
+from app.services.font_service import (
+    hex_to_rgb_float, _get_font_dirs, _find_priority_fonts, _get_fitz_font_args,
+)
+from app.services.layout_service import (
+    canvas_to_ratio, ratio_to_canvas, ratio_to_pdf_pt, recalc_ratio_from_preset,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -449,82 +455,6 @@ def check_update():
     t = threading.Thread(target=_check_update_thread, daemon=True)
     t.start()
 
-# ---------------------------------------------------------------------------
-# Utilitaires couleur
-# ---------------------------------------------------------------------------
-def hex_to_rgb_float(hex_color):
-    """#FF0000 → (1.0, 0.0, 0.0)"""
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return r / 255, g / 255, b / 255
-
-
-def _get_font_dirs() -> list:
-    """Retourne les dossiers de polices système selon la plateforme."""
-    if sys.platform == "win32":
-        win_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
-        dirs = [win_fonts]
-        local_fonts = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
-        if local_fonts.exists():
-            dirs.append(local_fonts)
-        return dirs
-    elif sys.platform == "darwin":
-        return [
-            Path("/Library/Fonts"),
-            Path("/System/Library/Fonts"),
-            Path.home() / "Library" / "Fonts",
-        ]
-    else:
-        return [
-            Path("/usr/share/fonts"),
-            Path("/usr/local/share/fonts"),
-            Path.home() / ".fonts",
-            Path.home() / ".local" / "share" / "fonts",
-        ]
-
-def _find_priority_fonts() -> dict:
-    """
-    Cherche les polices prioritaires connues sur le système.
-    Retourne {display_name: Path}. Pas de scan exhaustif.
-    """
-    platform_key = sys.platform if sys.platform in PRIORITY_FONTS else "linux"
-    candidates   = PRIORITY_FONTS[platform_key]
-    font_dirs    = _get_font_dirs()
-    found        = {}
-    extensions   = (".ttf", ".otf", ".TTF", ".OTF")
-    for display_name, filename_stem in candidates:
-        for font_dir in font_dirs:
-            if not font_dir.exists():
-                continue
-            for ext in extensions:
-                candidate = font_dir / (filename_stem + ext)
-                if candidate.exists():
-                    found[display_name] = candidate
-                    break
-            if display_name in found:
-                break
-    return found
-
-def _get_fitz_font_args(family: str, font_file, bold: bool, italic: bool) -> dict:
-    """
-    Retourne les kwargs de police pour insert_textbox().
-    Priorité : font_file (système) > BUILTIN_FONTS > fallback Courier.
-    """
-    if font_file and Path(str(font_file)).exists():
-        return {"fontfile": str(font_file), "fontname": "F0"}
-    if family in BUILTIN_FONTS:
-        variants = BUILTIN_FONTS[family]
-        if bold and italic:
-            key = ("b", "i")
-        elif bold:
-            key = ("b",)
-        elif italic:
-            key = ("i",)
-        else:
-            key = ("r",)
-        fontname = variants.get(key) or variants.get(("r",), "cour")
-        return {"fontname": fontname}
-    return {"fontname": "cour"}
 
 # ---------------------------------------------------------------------------
 # Thème CustomTkinter
@@ -1540,23 +1470,9 @@ class PDFHeaderApp:
             my = float(self.var_margin_y.get())
         except (ValueError, AttributeError):
             mx, my = 20.0, 20.0
-        pw = max(self.page_w_pt, 1.0)
-        ph = max(self.page_h_pt, 1.0)
-        row_n, col_n = POSITION_PRESETS[self.preset_position]
-        if col_n == 0:
-            rx = mx / pw
-        elif col_n == 1:
-            rx = 0.5
-        else:
-            rx = 1.0 - mx / pw
-        if row_n == 0:
-            ry = my / ph
-        elif row_n == 1:
-            ry = 0.5
-        else:
-            ry = 1.0 - my / ph
-        self.pos_ratio_x = max(SIZES["pos_ratio_min"], min(SIZES["pos_ratio_max"], rx))
-        self.pos_ratio_y = max(SIZES["pos_ratio_min"], min(SIZES["pos_ratio_max"], ry))
+        self.pos_ratio_x, self.pos_ratio_y = recalc_ratio_from_preset(
+            self.preset_position, mx, my, self.page_w_pt, self.page_h_pt
+        )
 
     def _on_margins_change(self, *_):
         """Recalcule les ratios depuis le preset actif quand une marge change (trace StringVar)."""
@@ -1812,25 +1728,20 @@ class PDFHeaderApp:
     # --------------------------------------------------------- Interactions ---
 
     def _canvas_to_ratio(self, cx, cy):
-        """Convertit des coordonnées canvas (px) en ratio page (0.0-1.0), clampé aux bornes."""
-        rx = (cx - self.img_offset_x) / max(self.page_w_px, 1)
-        ry = (cy - self.img_offset_y) / max(self.page_h_px, 1)
-        return max(0.0, min(1.0, rx)), max(0.0, min(1.0, ry))
+        """Coordonnées canvas (px) → ratio page (0.0-1.0), clampé aux bornes."""
+        return canvas_to_ratio(
+            cx, cy, self.img_offset_x, self.img_offset_y, self.page_w_px, self.page_h_px
+        )
 
     def _ratio_to_canvas(self, rx, ry):
-        """Convertit un ratio page (0.0-1.0) en coordonnées canvas (px absolues)."""
-        cx = self.img_offset_x + rx * self.page_w_px
-        cy = self.img_offset_y + ry * self.page_h_px
-        return cx, cy
+        """Ratio page (0.0-1.0) → coordonnées canvas (px absolues)."""
+        return ratio_to_canvas(
+            rx, ry, self.img_offset_x, self.img_offset_y, self.page_w_px, self.page_h_px
+        )
 
     def _ratio_to_pdf_pt(self, rx, ry):
-        """Ratio → coordonnées PDF en points (Y=0 en bas)."""
-        # Système de coordonnées fitz : origine bas-gauche, Y croît vers le haut.
-        # tkinter : origine haut-gauche, Y croît vers le bas.
-        # Conversion Y : fitz_y = (1.0 - ratio_y) * page_h_pt
-        x_pt = rx * self.page_w_pt
-        y_pt = (1.0 - ry) * self.page_h_pt
-        return x_pt, y_pt
+        """Ratio → coordonnées PDF en points (Y=0 en bas, système fitz)."""
+        return ratio_to_pdf_pt(rx, ry, self.page_w_pt, self.page_h_pt)
 
     def _on_click(self, event):
         """Stocke la position cliquée comme ratio (0.0-1.0), passe preset à 'custom', redessine l'overlay."""
