@@ -5,10 +5,10 @@
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.4.6.11"
-BUILD_ID    = "build-2026.02.22.03"
+VERSION     = "0.4.6.10-beta.1"
+BUILD_ID    = "build-2026.02.23.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
-CHANNEL     = "release"      # "release" | "beta" — détermine le canal de mise à jour
+CHANNEL     = "beta"
 _RUNNING_VERSION = VERSION   # mis à jour par _apply_pending_update() si un patch est appliqué
 
 import sys
