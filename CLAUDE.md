@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — CLAUDE.md
 # Version : 0.4.6
-# Build   : build-2026.02.22.02
+# Build   : build-2026.02.23.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -22,12 +22,9 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 ```
 pdf-header-tool/          # repo git
 ├── pdf_header.py         # Script principal — toute la logique est ici
-├── install.py            # Installateur Windows legacy (non utilisé en v0.4.6+)
-├── install.bat           # Wrapper bat legacy (non utilisé en v0.4.6+)
 ├── lancer.bat            # Point d'entrée Windows portable (double-clic)
 ├── setup.bat             # Installation dépendances au premier lancement
 ├── build_dist.py         # Script de build distribution (dev-only)
-├── get-pip.py            # Bundlé localement — NON commité (voir .gitignore)
 ├── version.txt           # Numéro de version — lu par le système de MAJ
 ├── ROADMAP.md            # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md             # Ce fichier
@@ -120,14 +117,19 @@ Linux (inchangé) : Python système, lancement direct via `python3 pdf_header.py
 - `BUILTIN_FONTS` : dict des polices PDF intégrées (Courier/Helvetica/Times) → codes fitz par style (r/b/i/bi)
 - `PRIORITY_FONTS` : dict par plateforme (`win32`/`darwin`/`linux`) des polices système prioritaires connues
 - `POSITION_PRESETS` : 9 presets de position `{key: (row, col)}` (tl/tc/tr/ml/mc/mr/bl/bc/br)
+- `PRESET_LABELS` : symboles Unicode pour les boutons de la grille 3×3 (↖↑↗←·→↙↓↘)
 - `DATE_FORMATS` : 8 formats de date prédéfinis `[(strftime_str, exemple), ...]`
+- `DATE_SOURCE_DISPLAY` : `{clé_interne → libellé_UI}` — mappe les valeurs de `date_source` vers leur affichage français ("today" → "Date du jour", "file_mtime" → "Date de création fichier")
+- `DATE_SOURCE_INTERNAL` : inverse de `DATE_SOURCE_DISPLAY` (parsing UI → clé interne)
+- `_HIDDEN_UI_FEATURES` : set des features présentes dans le code mais masquées dans l'UI en v0.4.x (letter_spacing, line_spacing, position_grid, margins, rotation, frame, background). Consulté dans `_build_sidebar()` et les callbacks d'options pour décider quels widgets construire.
 - `_get_font_dirs()` : retourne les dossiers de polices selon la plateforme
 - `_find_priority_fonts()` : lookup ciblé (pas de scan exhaustif) → `{display_name: Path}`
 - `_get_fitz_font_args(family, font_file, bold, italic)` : retourne `{"fontname": "cour"}` (built-in) ou `{"fontfile": str(path), "fontname": "F0"}` (système)
 
 ### Config persistante
 - Fichier : `pdf_header_config.json` dans `INSTALL_DIR`
-- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `debug_enabled`
+- Clés v0.4.0 : `use_filename`, `use_prefix`, `prefix_text`, `use_suffix`, `suffix_text`, `use_custom`, `custom_text`, `use_date`, `date_position`, `date_source`, `date_format`, `color_hex`, `font_family`, `font_file`, `font_size`, `bold`, `italic`, `underline`, `letter_spacing`, `line_spacing`, `preset_position`, `margin_x_pt`, `margin_y_pt`, `last_x_ratio`, `last_y_ratio`, `rotation`, `use_frame`, `frame_color_hex`, `frame_width`, `frame_style`, `frame_padding`, `frame_opacity`, `use_bg`, `bg_color_hex`, `bg_opacity`, `all_pages`, `ui_font_size`, `log_profile`
+- Note : `debug_enabled` (bool, < v0.4.6.11) remplacé par `log_profile` ("simple"|"medium"|"full") lors de l'Étape 4.6.3. Migration automatique dans `load_config()`.
 - Migration automatique depuis le format < v0.4.0 : ancienne clé `text_mode` → nouvelles clés `use_filename`/`use_custom` etc. (dans `load_config()`)
 - La position est stockée en **ratio (0.0 à 1.0)** de la page pour être indépendante de la résolution
 
@@ -141,7 +143,7 @@ Interface principale. Cycle de vie :
 - `_load_system_fonts()` : cherche les polices PRIORITY_FONTS sur disque, **doit être appelée avant `_build_ui()`**
 - `_build_ui()` : construit topbar + sidebar scrollable (`CTkScrollableFrame` dans outer frame 270px) + canvas + bottombar
 - `_section(parent, label)` : crée un header de section ALLCAPS dans la sidebar (converti de closure en méthode)
-- `_build_sidebar(parent)` : 9 sections — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION (grille 3×3), ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU
+- `_build_sidebar(parent)` : 9 sections dans le code — TEXTE DE L'EN-TÊTE, DATE, TYPOGRAPHIE, POSITION, ROTATION, CADRE, FOND, APPLIQUER SUR, APERÇU. En v0.4.x, seules ~4 sont visibles : ROTATION, CADRE, FOND et les sous-options espacement/grille/marges sont masquées via `_HIDDEN_UI_FEATURES`.
 - `_render_preview()` : convertit page PDF → image PIL → ImageTk, calcule scale + offsets
 - `_draw_overlay()` : dessine croix + aperçu texte avec rotation/bg/cadre approximatifs sur le canvas
 - `_on_click()` : stocke la position en ratio X/Y, puis `preset_position = "custom"`
@@ -179,46 +181,64 @@ Interface principale. Cycle de vie :
 
 ---
 
-## Logging et debug
+## Logging et debug (depuis v0.4.6.11 — Étape 4.6.3)
 
-### Principe
-- La fonction `_debug_log()` est **toujours présente** dans le code — ne jamais la supprimer
-- L'enregistrement est contrôlé par `_DEBUG_ENABLED` (global bool) + clé `"debug_enabled"` dans la config
-- Par défaut : **désactivé** — activation prévue dans la fenêtre Préférences (Étape 13)
+### Profils de verbosité
+- `"simple"` (prod) — INFO : démarrage, actions majeures, erreurs. **Défaut en canal `release`**
+- `"medium"` (beta/support) — DEBUG : + timings, fonctions clés. **Défaut en canal `beta`**
+- `"full"` (dev) — DEBUG + stderr : + traces UI, états, calculs, PDF_INSERT_*
+- Clé config : `"log_profile": "simple"|"medium"|"full"` (remplace `"debug_enabled"`)
+- Sélecteur dans la fenêtre Préférences prévu à l'Étape 13
 
-### Événements à logger (quand activé)
-| Événement | Données |
-|-----------|---------|
-| OPEN_FILES / OPEN_FOLDER | liste des fichiers chargés |
-| RENDER | canvas_wh, scale, page_pt, page_px, tk_scaling |
-| CLICK | filename, canvas coords, offset, page_px, ratio, canvas_wh |
-| APPLY | filename, ratio, page_pt, x_pt, y_pt — puis par page : rect + fitz.Point |
-| SKIP | filename, index |
+### Fichiers de log
+- `INSTALL_DIR / "pdf_header_app.log"` — niveau selon profil, rotation 1MB × 5 backups
+- `INSTALL_DIR / "pdf_header_errors.log"` — ERROR+ toujours actif, rotation 500KB × 3 backups
 
-### Fichier log
-- Chemin : `INSTALL_DIR / "pdf_header_debug.log"`
-- Mode append (pas d'écrasement entre sessions)
-- Format : `[YYYY-MM-DD HH:MM:SS] EVENT données`
-
-### Pattern dans le code
+### Sous-loggers par domaine
 ```python
-_DEBUG_ENABLED = False   # module-level
-_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+log_app    = logging.getLogger("pdf_header.app")    # lifecycle, session
+log_ui     = logging.getLogger("pdf_header.ui")     # interactions utilisateur
+log_pdf    = logging.getLogger("pdf_header.pdf")    # opérations PyMuPDF
+log_update = logging.getLogger("pdf_header.update") # système de mise à jour
+log_config = logging.getLogger("pdf_header.config") # chargement/sauvegarde config
+log_font   = logging.getLogger("pdf_header.font")   # découverte des polices
+```
+Ces loggers sont réutilisables tels quels lors du découpage en `app/` (Étape 4.7).
 
-def _debug_log(msg: str):
-    if not _DEBUG_ENABLED:
-        return
-    import datetime
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass
+### `_debug_log()` — wrapper rétrocompatible (NE JAMAIS SUPPRIMER)
+```python
+def _debug_log(msg: str, level: int = 1) -> None:
+    # level: 1=INFO (simple+), 2=DEBUG (medium+), 3=DEBUG [VERB] (full)
+    # Sera migré vers les domain loggers lors du refactor 4.7
+```
+Tous les appels existants (RENDER, CLICK, APPLY) conservent `level=1` par défaut.
+
+### Décorateur `_log_timed(logger, label)`
+Ajoute automatiquement START / OK elapsed_ms / FAILED elapsed_ms sur une fonction.
+Utilisé sur les fonctions à instrumenter en mode medium/full.
+
+### Événements structurés (profil full — format `key=value` stable)
+| Event | Données |
+|---|---|
+| `PDF_INSERT_PARAMS` | text_len, text_preview, font, size, bold, italic, rotation, click_ratio, preset, margins |
+| `PDF_INSERT_RESULT` | page, page_dims, x_pt/y_pt/fitz_y, text_rect, text_w_est, truncated, remaining_chars, applied_ratio |
+
+Ces events définissent les champs de la future dataclass `InsertResult` (Étape 4.9 / pytest).
+
+### Initialisation
+```python
+# Module-level (early) :
+_setup_logger(_default_log_profile())   # avant check_update()
 
 # Dans PDFHeaderApp.__init__, après load_config() :
-global _DEBUG_ENABLED
-_DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+_setup_logger(self.cfg.get("log_profile", _default_log_profile()))
+_log_session_start()   # APP_START session=XXXXXXXX version=... os=... runtime=...
+```
+
+### Exception handler global
+```python
+sys.excepthook = _global_exception_handler
+# → log_app.critical("UNCAUGHT_EXCEPTION", exc_info=...) + messagebox.showerror
 ```
 
 ---
@@ -289,9 +309,13 @@ d'extraire ces fichiers de façon fiable depuis Linux.
 - Toujours logger avant ET après chaque opération critique
 - `python\python3XX._pth` doit avoir `import site` décommenté et `../site-packages` présent
 
-**`setup.bat` et `get-pip.py` :**
-- Conservés dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
-- Ne font PAS partie de la distribution zip (plus nécessaires depuis le bundle complet)
+**`setup.bat` :**
+- Conservé dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
+- Ne fait PAS partie de la distribution zip (plus nécessaire depuis le bundle complet)
+
+**`get-pip.py` :**
+- NON commité (présent dans `.gitignore`) — à récupérer manuellement si besoin
+- Ne fait PAS partie de la distribution zip
 
 ### Workflow de release (depuis v0.4.6.1)
 
@@ -342,21 +366,14 @@ Le script automatise dans l'ordre :
 
 ### Modèle legacy (v0.4.x avant 4.6) — install.bat + venv système
 
-Les fichiers `install.bat` et `install.py` sont conservés dans le repo pour référence
-mais ne sont plus utilisés à partir de v0.4.6.
+Les fichiers `install.bat` et `install.py` ne sont plus dans le repo (supprimés — absents depuis v0.4.6+).
+Ils ne sont plus utilisés et ne font pas partie de la distribution.
 
 ---
 
-## Corrections à apporter (avant livraison)
-- **Croix de positionnement** : indique actuellement le coin supérieur-gauche de la zone de texte.
-  Objectif : la croix doit marquer le **centre géométrique** de la zone d'insertion.
-  Implémentation : estimer `text_w` via `fitz.Font.text_length()` et `text_h` via `nb_lignes × font_size × line_spacing`,
-  puis centrer le rect autour du point cliqué : `[x_pt - text_w/2, y_pt - text_h/2, x_pt + text_w/2, y_pt + text_h/2]`.
-  Mettre à jour `_draw_overlay()` en conséquence pour que l'aperçu soit lui aussi centré sur la croix.
-- **Libellé `date_source`** : la valeur `"file_mtime"` (interne) ne doit jamais être affichée dans l'UI.
-  Remplacer le libellé affiché par "Date de création fichier" tout en conservant la clé interne `"file_mtime"`.
-
 ## Problèmes connus et corrections déjà apportées
+- **Croix de positionnement centrée** (v0.4.6.11) : `_draw_overlay()` utilise `anchor="center"` sur le canvas ; `_apply()` centre le rect PDF via `fitz.Font.text_length()` et `half_h = font_size * line_spacing / 2`. Overlay et insertion PDF sont cohérents.
+- **Libellé `date_source`** (v0.4.6.11) : `DATE_SOURCE_DISPLAY` dict mappe `"file_mtime"` → `"Date de création fichier"` dans l'UI. La clé interne `"file_mtime"` est conservée dans la config.
 - `_draw_overlay()` appelée avant que `self.canvas` existe → guard `if not hasattr(self, 'canvas'): return`
 - Couleurs tkinter : format `#RRGGBB` uniquement — pas de transparence `#RRGGBBAA`
 - VSCode Git : `includeIf` dans `.gitconfig` doit utiliser le chemin absolu, pas `~`
@@ -366,6 +383,8 @@ mais ne sont plus utilisés à partir de v0.4.6.
 - `angle=rotation` sur `canvas.create_text()` → protégé dans `try/except tk.TclError` pour compatibilité Tk 8.6+
 - Frames masquables (date/cadre/fond) : réinsertion via `pack(after=ref_widget)` et non `pack()` seul pour éviter le déplacement en fin de sidebar
 - Champs numériques marge/épaisseur : `tk.StringVar` (pas `DoubleVar`) pour éviter `TclError` quand l'utilisateur vide le champ — valeur parsée avec `try/float()` + fallback
+- **[B-001 — open] Police système introuvable** (v0.4.6.11) : si `cfg["font_file"]` est `None` ou le fichier absent du disque, `_get_fitz_font_args()` passe `fontfile=None` à fitz → erreur "need font file or buffer". Fix prévu : valider l'existence du fichier avant `insert_textbox()`, fallback sur Courier avec `log_font.warning`. Voir BUGS.md.
+- **[B-002 — open] En-tête mal positionnée sur PDFs avec `/Rotate`** (v0.4.6.11) : PyMuPDF `page.rect` est déjà pivoté par la rotation de la page, mais `insert_textbox()` travaille dans l'espace de coordonnées pré-rotation → décalage et rotation parasite. Fix prévu : lire `page.rotation`, appliquer une compensation matricielle ou recalculer `x_pt`/`y_pt`. Voir BUGS.md.
 
 ---
 

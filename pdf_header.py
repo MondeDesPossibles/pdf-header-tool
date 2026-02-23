@@ -1,14 +1,14 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.23.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
-VERSION     = "0.4.6.10"
-BUILD_ID    = "build-2026.02.22.01"
+VERSION     = "0.4.6.10-beta.1"
+BUILD_ID    = "build-2026.02.23.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
-CHANNEL     = "release"      # "release" | "beta" — détermine le canal de mise à jour
+CHANNEL     = "beta"
 _RUNNING_VERSION = VERSION   # mis à jour par _apply_pending_update() si un patch est appliqué
 
 import sys
@@ -19,6 +19,11 @@ import shutil
 import tempfile
 import threading
 import datetime
+import logging
+import logging.handlers
+import uuid
+import time
+from functools import wraps
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -293,10 +298,14 @@ DEFAULT_CONFIG = {
     # Application
     "all_pages"      : True,
     "ui_font_size"   : 12,
-    "debug_enabled"  : False,
+    "log_profile"    : "simple",     # "simple" | "medium" | "full"
 }
 
 def load_config():
+    """Charge la config JSON depuis INSTALL_DIR, applique les valeurs par défaut de DEFAULT_CONFIG,
+    migre les anciens formats (text_mode < v0.4.0, debug_enabled < v0.4.6.11).
+    Retourne le dict cfg complet. Retourne une copie de DEFAULT_CONFIG en cas d'erreur.
+    """
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -319,47 +328,216 @@ def load_config():
                     cfg["use_custom"]  = True
                     cfg["custom_text"] = old_cst
                 cfg.setdefault("use_filename", old_mode != "custom")
+            # Migration debug_enabled (bool) → log_profile (str) depuis v0.4.6.11
+            if "debug_enabled" in cfg and "log_profile" not in cfg:
+                cfg["log_profile"] = "medium" if cfg.pop("debug_enabled") else "simple"
+            elif "debug_enabled" in cfg:
+                cfg.pop("debug_enabled")
+            log_config.info(f"CONFIG_LOAD ok path={CONFIG_FILE}")
             return cfg
-        except Exception:
-            pass
+        except Exception as e:
+            log_config.error(f"CONFIG_LOAD_ERROR error={e}")
     return DEFAULT_CONFIG.copy()
 
 def save_config(cfg):
+    """Sauvegarde le dict cfg dans pdf_header_config.json (INSTALL_DIR).
+    Ne lève pas d'exception — log en cas d'erreur d'écriture.
+    """
     try:
         INSTALL_DIR.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+        log_config.info("CONFIG_SAVE ok")
+    except Exception as e:
+        log_config.error(f"CONFIG_SAVE_ERROR error={e}")
 
 # ---------------------------------------------------------------------------
-# Logging debug (contrôlé par config "debug_enabled")
+# Système de logs multi-niveaux (Étape 4.6.3)
+# Profils : "simple" (prod) | "medium" (beta/support) | "full" (dev)
 # ---------------------------------------------------------------------------
-_DEBUG_ENABLED = False
-_DEBUG_LOG     = INSTALL_DIR / "pdf_header_debug.log"
+_LOG_PROFILE = "simple"
+_APP_LOG     = INSTALL_DIR / "pdf_header_app.log"
+_ERROR_LOG   = INSTALL_DIR / "pdf_header_errors.log"
+_SESSION_ID  = uuid.uuid4().hex[:8]
 
-def _debug_log(msg: str):
-    if not _DEBUG_ENABLED:
-        return
-    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def _default_log_profile() -> str:
+    """Profil par défaut selon le canal de distribution."""
+    if CHANNEL == "beta":
+        return "medium"
+    return "simple"
+
+
+def _setup_logger(profile: str) -> None:
+    """Configure le logger selon le profil demandé. Peut être rappelé après chargement config."""
+    global _LOG_PROFILE
+    _LOG_PROFILE = profile
+    root = logging.getLogger("pdf_header")
+    root.handlers.clear()
+    root.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        fmt="[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    # Handler app.log — INFO pour "simple", DEBUG pour "medium"/"full"
+    py_level = logging.INFO if profile == "simple" else logging.DEBUG
     try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {msg}\n")
+        fh = logging.handlers.RotatingFileHandler(
+            str(_APP_LOG), maxBytes=1_000_000, backupCount=5, encoding="utf-8"
+        )
+        fh.setLevel(py_level)
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
     except Exception:
         pass
+
+    # Handler error.log — ERROR+ toujours actif, indépendant du profil
+    try:
+        eh = logging.handlers.RotatingFileHandler(
+            str(_ERROR_LOG), maxBytes=500_000, backupCount=3, encoding="utf-8"
+        )
+        eh.setLevel(logging.ERROR)
+        eh.setFormatter(fmt)
+        root.addHandler(eh)
+    except Exception:
+        pass
+
+    # Handler stderr uniquement en profil "full" (dev)
+    if profile == "full":
+        sh = logging.StreamHandler()
+        sh.setLevel(logging.DEBUG)
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+
+
+# Sous-loggers par domaine — réutilisables tels quels lors de la migration app/ (Étape 4.7)
+log_app    = logging.getLogger("pdf_header.app")    # lifecycle, démarrage
+log_ui     = logging.getLogger("pdf_header.ui")     # interactions utilisateur
+log_pdf    = logging.getLogger("pdf_header.pdf")    # opérations PyMuPDF
+log_update = logging.getLogger("pdf_header.update") # système de mise à jour
+log_config = logging.getLogger("pdf_header.config") # chargement/sauvegarde config
+log_font   = logging.getLogger("pdf_header.font")   # découverte des polices
+
+
+def _debug_log(msg: str, level: int = 1) -> None:
+    """Wrapper rétrocompatible. level: 1=INFO (simple+), 2=DEBUG (medium+), 3=DEBUG [VERB] (full).
+    À migrer vers les domain loggers lors du refactor 4.7.
+    """
+    if level == 1:
+        log_app.info(msg)
+    elif level == 2:
+        log_app.debug(msg)
+    else:
+        log_app.debug(f"[VERB] {msg}")
+
+
+def _log_timed(logger, label: str = None):
+    """Décorateur : log début + fin + elapsed_ms. Actif uniquement en medium/full (DEBUG)."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            name = label or func.__name__
+            logger.debug(f"{name} START")
+            t0 = time.perf_counter()
+            try:
+                result = func(*args, **kwargs)
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                logger.debug(f"{name} OK elapsed_ms={elapsed}")
+                return result
+            except Exception as e:
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                logger.error(f"{name} FAILED elapsed_ms={elapsed} error={e}")
+                raise
+        return wrapper
+    return decorator
+
+
+def _log_session_start() -> None:
+    """Enregistre le contexte complet de la session — première entrée utile pour le support."""
+    import platform
+    runtime = (
+        "embedded"
+        if ("python.exe" in sys.executable.lower() or getattr(sys, "frozen", False))
+        else "system"
+    )
+    log_app.info(
+        f"APP_START session={_SESSION_ID} version={VERSION} build={BUILD_ID} "
+        f"channel={CHANNEL} profile={_LOG_PROFILE} "
+        f"os={platform.system()} {platform.release()} "
+        f"python={sys.version.split()[0]} runtime={runtime}"
+    )
+    log_app.info(f"APP_DIR install_dir={INSTALL_DIR}")
+
+
+def _global_exception_handler(exc_type, exc_value, exc_tb) -> None:
+    """Capture les exceptions non gérées — log dans error.log + message utilisateur sobre."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    log_app.critical("UNCAUGHT_EXCEPTION", exc_info=(exc_type, exc_value, exc_tb))
+    try:
+        messagebox.showerror(
+            "Erreur inattendue",
+            f"Une erreur inattendue s'est produite.\n"
+            f"Détails dans :\n{_ERROR_LOG}"
+        )
+    except Exception:
+        pass
+
+
+sys.excepthook = _global_exception_handler
+_setup_logger(_default_log_profile())
 
 # ---------------------------------------------------------------------------
 # Mise à jour automatique (depuis v0.4.6.1)
 # Stratégie : GitHub Releases API + metadata.json + app-patch.zip
 # Le patch est téléchargé dans _update_pending/ et appliqué au prochain démarrage.
 # ---------------------------------------------------------------------------
+
+def _version_gt(remote: str, local: str) -> bool:
+    """Retourne True si remote est strictement plus récent que local.
+
+    Formats supportés : X.Y.Z  /  X.Y.Z.W  /  X.Y.Z-beta.N  /  X.Y.Z.W-beta.N
+    Ordre : stable > beta > alpha pour une même base numérique.
+    Stdlib-only — aucune dépendance externe requise.
+    Note : à migrer dans app/update.py lors de l'Étape 4.7.
+    """
+    import re
+
+    def _parse(v: str):
+        m = re.match(
+            r'^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-(alpha|beta)\.(\d+))?$',
+            v.strip()
+        )
+        if not m:
+            # Format inconnu → considérer comme très ancien pour ne pas déclencher d'update
+            return (0, 0, 0, 0, 0, 0)
+        nums = (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4) or 0))
+        pre_order = {'alpha': 0, 'beta': 1}
+        pre_type = pre_order.get(m.group(5), 99) if m.group(5) else 99  # 99 = stable
+        pre_num = int(m.group(6)) if m.group(6) else 0
+        return (*nums, pre_type, pre_num)
+
+    return _parse(remote) > _parse(local)
+
+
 def _check_update_thread():
+    """Thread daemon de vérification de mise à jour via GitHub Releases API.
+
+    Interroge l'API selon le canal (release→/releases/latest, beta→/releases[0]).
+    Si nouvelle version disponible : télécharge metadata.json puis app-patch-vX.Y.Z.zip,
+    vérifie SHA256, extrait dans _update_pending/.
+    Silencieux en cas d'erreur réseau (ne bloque jamais le démarrage de l'app).
+    """
     import datetime
     def _ts():
         return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         print(f"[{_ts()}] UPDATE_CHECK version courante: {_RUNNING_VERSION}")
+        log_update.debug(f"UPDATE_CHECK_START version={_RUNNING_VERSION} channel={CHANNEL}")
         # Contexte SSL : certifi si disponible (bundle inclus), sinon contexte système
         import ssl
         try:
@@ -393,10 +571,12 @@ def _check_update_thread():
 
         tag_name = release.get("tag_name", "")
         remote_version = tag_name.lstrip("v")
-        if not remote_version or remote_version == _RUNNING_VERSION:
+        if not remote_version or not _version_gt(remote_version, _RUNNING_VERSION):
             print(f"[{_ts()}] UPDATE_CHECK deja a jour")
+            log_update.info(f"UPDATE_CHECK_OK local={_RUNNING_VERSION} remote={remote_version}")
             return
         print(f"[{_ts()}] UPDATE_CHECK nouvelle version disponible: {remote_version}")
+        log_update.info(f"UPDATE_AVAILABLE local={_RUNNING_VERSION} remote={remote_version}")
 
         # 2. Indexer les assets de la release
         assets = {a["name"]: a["browser_download_url"] for a in release.get("assets", [])}
@@ -457,16 +637,21 @@ def _check_update_thread():
 
         print(f"[{_ts()}] UPDATE_CHECK patch mis en attente: {_RUNNING_VERSION} -> {remote_version} (sera applique au prochain lancement)")
         _debug_log(f"UPDATE_STAGED {_RUNNING_VERSION} -> {remote_version}")
+        log_update.info(f"UPDATE_STAGED local={_RUNNING_VERSION} remote={remote_version}")
 
         if _update_staged_callback:
             _update_staged_callback(remote_version)
 
     except Exception as e:
         print(f"[{_ts()}] UPDATE_CHECK ERREUR: {e}")
+        log_update.error(f"UPDATE_CHECK_ERROR error={e}")
 
 _update_staged_callback = None  # callable(version: str) | None — défini par PDFHeaderApp
 
 def check_update():
+    """Lance _check_update_thread() comme thread daemon non bloquant.
+    Appelée au démarrage de l'app, après _bootstrap() et _setup_logger().
+    """
     t = threading.Thread(target=_check_update_thread, daemon=True)
     t.start()
 
@@ -630,13 +815,16 @@ ctk.set_default_color_theme("blue")
 # ---------------------------------------------------------------------------
 class PDFHeaderApp:
     def __init__(self, root, pdf_files=None):
+        """Initialise l'état de l'app, charge la config, les polices système, construit l'UI.
+        Charge le premier PDF si passé en argument, sinon affiche l'écran d'accueil.
+        """
         self.root      = root
         self.pdf_files = list(pdf_files) if pdf_files else []
         self.idx       = 0
         self.cfg       = load_config()
 
-        global _DEBUG_ENABLED
-        _DEBUG_ENABLED = self.cfg.get("debug_enabled", False)
+        _setup_logger(self.cfg.get("log_profile", _default_log_profile()))
+        _log_session_start()
 
         # État courant
         self.doc           = None
@@ -679,15 +867,21 @@ class PDFHeaderApp:
     def _load_system_fonts(self):
         """Charge les polices système prioritaires disponibles."""
         self._system_fonts = _find_priority_fonts()
+        log_font.debug(f"FONT_SCAN_DONE count={len(self._system_fonts)} fonts={list(self._system_fonts.keys())}")
 
     # ------------------------------------------------------------------ UI ---
 
     def _show_update_notice(self, version: str):
-        """Affiche un badge dans la topbar quand un patch est stagé et prêt."""
+        """Affiche une messagebox informant qu'une mise à jour est disponible.
+        Appelée via _update_staged_callback depuis _check_update_thread (thread daemon).
+        """
         self.lbl_update.configure(text=f"  Mise a jour v{version} disponible — relancez l'app  ")
         self.lbl_update.pack(side="right", padx=8, pady=6)
 
     def _build_ui(self):
+        """Construit la fenêtre principale : topbar + corps (sidebar + canvas + panneau fichiers) + bottombar.
+        Appelle _build_sidebar(), _build_file_panel(). Lie les événements souris au canvas.
+        """
         self.root.title("PDF Header Tool")
         self.root.configure(fg_color=COLORS["bg_dark"])
         self.root.minsize(SIZES["win_min_w"], SIZES["win_min_h"])
@@ -789,7 +983,9 @@ class PDFHeaderApp:
         self.btn_skip.pack(side="right", padx=4, pady=8)
 
     def _section(self, parent, label):
-        """Séparateur de section dans la sidebar."""
+        """Crée un header de section ALLCAPS dans la sidebar.
+        Retourne le CTkLabel créé (utilisé comme ref_widget pour pack(after=...)).
+        """
         ctk.CTkLabel(parent, text=label,
                      fg_color="transparent", text_color=COLORS["text_placeholder"],
                      font=("Segoe UI", 10, "bold"),
@@ -798,6 +994,9 @@ class PDFHeaderApp:
                      corner_radius=0).pack(fill="x", padx=14)
 
     def _build_sidebar(self, parent):
+        """Construit les sections de la sidebar dans un CTkScrollableFrame.
+        Respecte _HIDDEN_UI_FEATURES : certaines sections sont omises en v0.4.x.
+        """
         cfg = self.cfg
 
         # ═══════════════════════════════════════════════════════════════
@@ -1277,6 +1476,7 @@ class PDFHeaderApp:
     # -------------------------------------------------- Panneau fichiers ---
 
     def _build_file_panel(self, parent):
+        """Construit le panneau scrollable à droite listant les fichiers PDF chargés."""
         ctk.CTkLabel(parent, text="FICHIERS",
                      fg_color="transparent", text_color=COLORS["text_placeholder"],
                      font=("Segoe UI", 10, "bold"),
@@ -1300,6 +1500,7 @@ class PDFHeaderApp:
         self.lbl_file_counter.pack(fill="x", pady=4)
 
     def _populate_file_panel(self):
+        """Peuple le panneau fichiers avec une carte par PDF (état initial : non_traite)."""
         for frame in self.file_card_frames.values():
             frame.destroy()
         self.file_card_frames = {}
@@ -1309,6 +1510,9 @@ class PDFHeaderApp:
         self._refresh_file_counter()
 
     def _create_file_card(self, idx, path):
+        """Crée le widget carte pour un fichier (nom tronqué + badge état coloré).
+        Retourne le frame de la carte (stocké dans self._file_cards[idx]).
+        """
         frame = ctk.CTkFrame(self.file_cards_scroll,
                              fg_color=COLORS["input_bg"], corner_radius=6)
         frame.pack(fill="x", padx=6, pady=3)
@@ -1331,6 +1535,9 @@ class PDFHeaderApp:
         self.file_card_badges[idx] = badge_lbl
 
     def _refresh_card(self, idx):
+        """Met à jour la couleur de fond et le texte du badge d'une carte selon son état.
+        États : non_traite (neutre), traite (vert), passe (gris), erreur (rouge).
+        """
         if idx not in self.file_card_frames:
             return
         frame = self.file_card_frames[idx]
@@ -1354,16 +1561,19 @@ class PDFHeaderApp:
             badge.configure(text="", text_color=COLORS["text_tertiary"])
 
     def _refresh_all_cards(self):
+        """Rafraîchit toutes les cartes du panneau fichiers."""
         for i in range(len(self.pdf_files)):
             self._refresh_card(i)
         self._refresh_file_counter()
 
     def _refresh_file_counter(self):
+        """Met à jour le compteur 'X / Y fichiers traités' en bas du panneau."""
         done = sum(1 for s in self.file_states.values() if s in ("traite", "passe"))
         total = len(self.pdf_files)
         self.lbl_file_counter.configure(text=f"{done} / {total} fichiers traités")
 
     def _find_next_untreated(self):
+        """Retourne l'index du prochain fichier en état 'non_traite', ou None si tous traités."""
         n = len(self.pdf_files)
         for offset in range(1, n):
             i = (self.idx + offset) % n
@@ -1372,12 +1582,16 @@ class PDFHeaderApp:
         return None
 
     def _jump_to_file(self, idx):
+        """Charge le PDF à l'index donné et affiche sa prévisualisation sur le canvas."""
         self.idx = idx
         self._load_pdf()
 
     # --------------------------------------------------- Écran d'accueil ---
 
     def _show_welcome_screen(self):
+        """Affiche l'écran d'accueil (boutons Ouvrir fichiers / Ouvrir dossier) sur le canvas.
+        Désactive la sidebar tant qu'aucun PDF n'est chargé.
+        """
         self.welcome_frame = ctk.CTkFrame(self.canvas_frame, fg_color=COLORS["bg_canvas"], corner_radius=0)
         self.welcome_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
 
@@ -1410,11 +1624,15 @@ class PDFHeaderApp:
         self._set_ui_state(False)
 
     def _hide_welcome_screen(self):
+        """Cache l'écran d'accueil et réactive la sidebar."""
         if hasattr(self, "welcome_frame") and self.welcome_frame.winfo_exists():
             self.welcome_frame.destroy()
         self._set_ui_state(True)
 
     def _set_ui_state(self, enabled: bool):
+        """Active ou désactive tous les contrôles de la sidebar.
+        Args: state (str) — "normal" ou "disabled".
+        """
         state = "normal" if enabled else "disabled"
         self.btn_apply.configure(state=state)
         self.btn_skip.configure(state=state)
@@ -1425,6 +1643,9 @@ class PDFHeaderApp:
                 pass
 
     def _open_files(self):
+        """Ouvre une boîte de dialogue de sélection de fichiers PDF.
+        Charge les fichiers sélectionnés dans la liste et affiche le premier.
+        """
         paths = filedialog.askopenfilenames(
             title="Sélectionner des fichiers PDF",
             filetypes=[("Fichiers PDF", "*.pdf")]
@@ -1434,11 +1655,15 @@ class PDFHeaderApp:
         self.pdf_files = [Path(p) for p in paths]
         self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        log_ui.info(f"OPEN_FILES count={len(self.pdf_files)}")
         self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
 
     def _open_folder(self):
+        """Ouvre une boîte de dialogue de sélection de dossier.
+        Charge tous les fichiers .pdf du dossier (non récursif) et affiche le premier.
+        """
         folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les PDFs")
         if not folder:
             return
@@ -1448,6 +1673,7 @@ class PDFHeaderApp:
             return
         self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
+        log_ui.info(f"OPEN_FOLDER count={len(self.pdf_files)}")
         self._populate_file_panel()
         self._hide_welcome_screen()
         self._load_pdf()
@@ -1455,36 +1681,41 @@ class PDFHeaderApp:
     # ------------------------------------------- Callbacks sidebar texte ---
 
     def _on_text_change(self, *_):
-        """Rafraîchit l'aperçu texte et le canvas overlay."""
+        """Appelée quand la configuration du texte change. Relance _draw_overlay()."""
         self.lbl_preview.configure(text=self._get_header_text())
         self._draw_overlay()
 
     def _on_use_custom_change(self, *_):
-        """Quand 'Texte personnalisé' est activé, désactive 'Nom du fichier'."""
+        """Affiche ou cache le champ de texte personnalisé selon l'état de var_use_custom."""
         if self.var_use_custom.get():
             self.var_use_filename.set(False)
         self._on_text_change()
 
     def _on_date_toggle(self, *_):
+        """Affiche ou cache les options de date selon l'état de var_use_date."""
         self._update_date_options_visibility()
         self._on_text_change()
 
     def _update_date_options_visibility(self):
+        """Pack ou unpack les widgets date (position, source, format) selon var_use_date."""
         if self.var_use_date.get():
             self._date_options_frame.pack(fill="x", padx=4, after=self._cb_date)
         else:
             self._date_options_frame.pack_forget()
 
     def _on_date_format_change(self, display_value: str):
+        """Met à jour cfg['date_format'] quand l'utilisateur change le menu déroulant de format."""
         fmt = self._date_format_map.get(display_value, "%d/%m/%Y")
         self.var_date_format.set(fmt)
         self._on_text_change()
 
     def _on_frame_toggle(self, *_):
+        """Affiche ou cache les options de cadre selon l'état de var_use_frame."""
         self._update_frame_options_visibility()
         self._on_text_change()
 
     def _update_frame_options_visibility(self):
+        """Pack ou unpack les widgets cadre. Sans effet si 'frame' in _HIDDEN_UI_FEATURES."""
         if "frame" in _HIDDEN_UI_FEATURES:
             return
         if self.var_use_frame.get():
@@ -1493,10 +1724,12 @@ class PDFHeaderApp:
             self._frame_options_frame.pack_forget()
 
     def _on_bg_toggle(self, *_):
+        """Affiche ou cache les options de fond selon l'état de var_use_bg."""
         self._update_bg_options_visibility()
         self._on_text_change()
 
     def _update_bg_options_visibility(self):
+        """Pack ou unpack les widgets fond. Sans effet si 'background' in _HIDDEN_UI_FEATURES."""
         if "background" in _HIDDEN_UI_FEATURES:
             return
         if self.var_use_bg.get():
@@ -1505,6 +1738,7 @@ class PDFHeaderApp:
             self._bg_options_frame.pack_forget()
 
     def _update_opacity_labels(self):
+        """Met à jour les labels d'opacité affichant la valeur en % (slider 0.0-1.0 → 0-100)."""
         try:
             self.lbl_frame_opacity.configure(text=f"{int(self.var_frame_opacity.get()*100)}%")
             self.lbl_bg_opacity.configure(text=f"{int(self.var_bg_opacity.get()*100)}%")
@@ -1513,15 +1747,19 @@ class PDFHeaderApp:
         self._draw_overlay()
 
     def _on_font_change(self, font_name: str):
+        """Met à jour cfg['font_file'] et cfg['font_family'] quand l'utilisateur change la police."""
         if font_name in self._system_fonts:
             self.cfg["font_file"] = str(self._system_fonts[font_name])
+            log_ui.debug(f"UI_FONT_CHANGE font={font_name} file={self.cfg['font_file']}")
         else:
             self.cfg["font_file"] = None
+            log_ui.debug(f"UI_FONT_CHANGE font={font_name} type=builtin")
         self._on_text_change()
 
     # --------------------------------------------------- Couleurs (picks) ---
 
     def _pick_color(self, _=None):
+        """Ouvre le sélecteur de couleur tkinter pour la couleur du texte de l'en-tête."""
         color = colorchooser.askcolor(color=self.cfg["color_hex"],
                                       title="Couleur du texte")
         if color and color[1]:
@@ -1531,6 +1769,7 @@ class PDFHeaderApp:
             self._draw_overlay()
 
     def _pick_frame_color(self, _=None):
+        """Ouvre le sélecteur de couleur tkinter pour la couleur du cadre."""
         color = colorchooser.askcolor(color=self.cfg.get("frame_color_hex", COLORS["frame_default"]),
                                       title="Couleur du cadre")
         if color and color[1]:
@@ -1540,6 +1779,7 @@ class PDFHeaderApp:
             self._draw_overlay()
 
     def _pick_bg_color(self, _=None):
+        """Ouvre le sélecteur de couleur tkinter pour la couleur du fond."""
         color = colorchooser.askcolor(color=self.cfg.get("bg_color_hex", COLORS["bg_default"]),
                                       title="Couleur du fond")
         if color and color[1]:
@@ -1549,6 +1789,7 @@ class PDFHeaderApp:
             self._draw_overlay()
 
     def _change_size(self, delta):
+        """Incrémente ou décrémente la taille de police de `delta` points (±1 typiquement)."""
         val = max(SIZES["font_size_min"], min(SIZES["font_size_max"], self.var_size.get() + delta))
         self.var_size.set(val)
         self._on_text_change()
@@ -1556,6 +1797,7 @@ class PDFHeaderApp:
     # ----------------------------------------------- Presets de position ---
 
     def _on_preset_click(self, preset_key: str):
+        """Sélectionne un preset de position (tl/tc/.../br), recalcule les ratios et redessine l'overlay."""
         self.preset_position = preset_key
         self._recalc_ratio_from_preset()
         self._update_preset_highlight()
@@ -1563,7 +1805,10 @@ class PDFHeaderApp:
         self._draw_overlay()
 
     def _recalc_ratio_from_preset(self):
-        """Recalcule pos_ratio_x/y depuis le preset actif et les marges."""
+        """Convertit le preset actif + marges (en pts PDF) en ratios canvas (0.0-1.0).
+        Stocke le résultat dans self.pos_ratio_x / self.pos_ratio_y.
+        Les marges margin_x_pt / margin_y_pt sont en points PDF (1 pt = 1/72 pouce).
+        """
         if self.preset_position == "custom":
             return
         if self.preset_position not in POSITION_PRESETS:
@@ -1592,14 +1837,14 @@ class PDFHeaderApp:
         self.pos_ratio_y = max(SIZES["pos_ratio_min"], min(SIZES["pos_ratio_max"], ry))
 
     def _on_margins_change(self, *_):
-        """Recalcule la position si on est en mode preset."""
+        """Recalcule les ratios depuis le preset actif quand une marge change (trace StringVar)."""
         if self.preset_position != "custom":
             self._recalc_ratio_from_preset()
             self._update_pos_label()
             self._draw_overlay()
 
     def _update_preset_highlight(self):
-        """Met en surbrillance le bouton preset actif."""
+        """Surligne le bouton du preset actif en bleu, réinitialise les autres."""
         if not hasattr(self, "_preset_buttons"):
             return
         for key, btn in self._preset_buttons.items():
@@ -1611,7 +1856,10 @@ class PDFHeaderApp:
     # ----------------------------------------------- Composition du texte ---
 
     def _get_header_text(self) -> str:
-        """Assemble le texte d'en-tête selon les options actives."""
+        """Assemble le texte de l'en-tête depuis la config courante.
+        Format : [date_prefix] [prefix] [path.stem | custom_text] [suffix] [date_suffix]
+        Utilise path.stem (sans extension) pour le nom de fichier.
+        """
         # Base
         if self.var_use_custom.get():
             base = self.var_custom_text.get().strip()
@@ -1664,12 +1912,20 @@ class PDFHeaderApp:
     # --------------------------------------------------------- PDF courant ---
 
     def _load_pdf(self):
+        """Ouvre le PDF à self.idx, charge la première page, appelle _render_preview().
+        Met à jour self.current_path, self.current_doc, self.current_page.
+        """
         path = self.pdf_files[self.idx]
         self.lbl_filename.configure(text=f"  {path.name}  ")
         self.lbl_progress.configure(text=f"  {self.idx + 1} / {len(self.pdf_files)}  ")
         if self.doc:
             self.doc.close()
+        _t0_load = time.perf_counter()
         self.doc = fitz.open(str(path))
+        log_pdf.info(
+            f"PDF_OPEN file={path.name} pages={len(self.doc)} idx={self.idx} "
+            f"elapsed_ms={int((time.perf_counter() - _t0_load) * 1000)}"
+        )
         # Lire les dims dès maintenant pour _recalc_ratio_from_preset()
         page0 = self.doc[0]
         self.page_w_pt = page0.rect.width
@@ -1683,8 +1939,13 @@ class PDFHeaderApp:
     # --------------------------------------------------------- Rendu canvas ---
 
     def _render_preview(self):
+        """Convertit la page PDF courante en image PIL via PyMuPDF puis en ImageTk.
+        Met à jour self.scale, self.img_offset_x/y, self.page_w_px/h_px, self.page_w_pt/h_pt.
+        Appelée par _load_pdf() et après redimensionnement de fenêtre.
+        """
         if not self.doc:
             return
+        _t0_render = time.perf_counter()
         self.canvas.update_idletasks()
         cw = max(self.canvas.winfo_width(),  10)
         ch = max(self.canvas.winfo_height(), 10)
@@ -1707,6 +1968,12 @@ class PDFHeaderApp:
             f"page_px=({pix.width}x{pix.height}) "
             f"tk_scaling={self.canvas.tk.call('tk','scaling'):.3f}"
         )
+        log_pdf.debug(
+            f"RENDER scale={self.scale:.4f} "
+            f"page_pt=({self.page_w_pt:.1f}x{self.page_h_pt:.1f}) "
+            f"page_px=({pix.width}x{pix.height}) "
+            f"elapsed_ms={int((time.perf_counter() - _t0_render) * 1000)}"
+        )
 
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         self.tk_img = ImageTk.PhotoImage(img)
@@ -1720,8 +1987,18 @@ class PDFHeaderApp:
         self._draw_overlay()
 
     def _draw_overlay(self, hover_cx=None, hover_cy=None):
+        """Dessine l'aperçu interactif sur le canvas (lignes de guidage, fond/cadre approx, texte, crosshair).
+        Args: hover_cx/hover_cy (float|None) — position souris pour les lignes de guidage (None = pas de hover).
+        Guard: retour immédiat si self.canvas n'existe pas encore.
+        """
         if not hasattr(self, "canvas"):
             return
+        # Log uniquement lors des mises à jour de position (pas sur chaque hover)
+        if hover_cx is None:
+            log_ui.debug(
+                f"OVERLAY_UPDATE ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"preset={self.preset_position}"
+            )
         self.canvas.delete("overlay")
 
         # Croix de guidage au survol
@@ -1758,6 +2035,8 @@ class PDFHeaderApp:
         canvas_font_name = canvas_font_map.get(font_family, font_family)
         canvas_font = (canvas_font_name, fpx, style_str)
 
+        # Fond et cadre : approximation canvas uniquement (pas de mesure exacte possible avec tkinter).
+        # SIZES["text_char_w"] est calibré empiriquement pour Courier 12pt.
         # Fond et cadre approximatifs (avant le texte)
         if self.var_use_bg.get() or self.var_use_frame.get():
             approx_w = max(len(text) * fpx * SIZES["text_char_w"], 20)
@@ -1811,22 +2090,28 @@ class PDFHeaderApp:
     # --------------------------------------------------------- Interactions ---
 
     def _canvas_to_ratio(self, cx, cy):
+        """Convertit des coordonnées canvas (px) en ratio page (0.0-1.0), clampé aux bornes."""
         rx = (cx - self.img_offset_x) / max(self.page_w_px, 1)
         ry = (cy - self.img_offset_y) / max(self.page_h_px, 1)
         return max(0.0, min(1.0, rx)), max(0.0, min(1.0, ry))
 
     def _ratio_to_canvas(self, rx, ry):
+        """Convertit un ratio page (0.0-1.0) en coordonnées canvas (px absolues)."""
         cx = self.img_offset_x + rx * self.page_w_px
         cy = self.img_offset_y + ry * self.page_h_px
         return cx, cy
 
     def _ratio_to_pdf_pt(self, rx, ry):
         """Ratio → coordonnées PDF en points (Y=0 en bas)."""
+        # Système de coordonnées fitz : origine bas-gauche, Y croît vers le haut.
+        # tkinter : origine haut-gauche, Y croît vers le bas.
+        # Conversion Y : fitz_y = (1.0 - ratio_y) * page_h_pt
         x_pt = rx * self.page_w_pt
         y_pt = (1.0 - ry) * self.page_h_pt
         return x_pt, y_pt
 
     def _on_click(self, event):
+        """Stocke la position cliquée comme ratio (0.0-1.0), passe preset à 'custom', redessine l'overlay."""
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         self.pos_ratio_x = rx
         self.pos_ratio_y = ry
@@ -1841,16 +2126,24 @@ class PDFHeaderApp:
             f"ratio=({rx:.4f},{ry:.4f}) "
             f"canvas_wh=({self.canvas.winfo_width()},{self.canvas.winfo_height()})"
         )
+        x_pt_c, y_pt_c = self._ratio_to_pdf_pt(rx, ry)
+        log_ui.debug(
+            f"UI_CLICK file={fname} "
+            f"ratio=({rx:.4f},{ry:.4f}) "
+            f"pt=({x_pt_c:.1f},{y_pt_c:.1f})"
+        )
         self._update_pos_label()
         self._draw_overlay()
 
     def _on_motion(self, event):
+        """Dessine les lignes de guidage pointillées à la position souris et met à jour le label coords."""
         self._draw_overlay(hover_cx=event.x, hover_cy=event.y)
         rx, ry = self._canvas_to_ratio(event.x, event.y)
         x_pt, y_pt = self._ratio_to_pdf_pt(rx, ry)
         self.lbl_coords.configure(text=f"x: {x_pt:.0f} pts  ·  y: {y_pt:.0f} pts")
 
     def _update_pos_label(self):
+        """Met à jour le label de coordonnées affichant x/y en points PDF selon la position courante."""
         x_pt, y_pt = self._ratio_to_pdf_pt(self.pos_ratio_x, self.pos_ratio_y)
         preset_label = PRESET_LABELS.get(self.preset_position, "libre")
         self.lbl_pos.configure(
@@ -1860,12 +2153,23 @@ class PDFHeaderApp:
     # ------------------------------------------------------------ Actions ---
 
     def _apply(self):
+        """Insère l'en-tête dans le PDF courant et sauvegarde dans <dossier>_avec_entete/.
+
+        Pour chaque page (ou première page seulement selon all_pages) :
+        - Calcule la position en pts fitz depuis le ratio cliqué
+        - Dessine fond et cadre si activés (centrés sur le point cliqué)
+        - Insère le texte via insert_textbox() (centré, avec rotation)
+        - Dessine le soulignement si activé
+        Logue PDF_INSERT_PARAMS et PDF_INSERT_RESULT (profil medium/full).
+        Passe au fichier suivant ou affiche 'Terminé' si tous traités.
+        """
         path     = self.pdf_files[self.idx]
         out_dir  = path.parent.with_name(path.parent.name + "_avec_entete")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / path.name
 
         header_text = self._get_header_text()
+        _t0_apply = time.perf_counter()
         color_float = hex_to_rgb_float(self.cfg["color_hex"])
         font_size   = max(self.var_size.get(), SIZES["font_size_min"])
         all_pages   = self.var_all_pages.get()
@@ -1901,6 +2205,11 @@ class PDFHeaderApp:
         bg_color   = hex_to_rgb_float(self.cfg.get("bg_color_hex", COLORS["bg_default"]))
         bg_opacity = max(0.0, min(1.0, self.var_bg_opacity.get()))
 
+        log_pdf.info(
+            f"PDF_PROCESS_START file={path.name} "
+            f"pages_mode={'all' if all_pages else 'first'} "
+            f"font={font_family} size={font_size} rotation={rotation}"
+        )
         try:
             doc_out = fitz.open(str(path))
             pages_to_process = range(len(doc_out)) if all_pages else [0]
@@ -1909,17 +2218,28 @@ class PDFHeaderApp:
                 f"APPLY [{path.name}] ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
                 f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} rotation={rotation} font={font_family}"
             )
+            log_pdf.debug(
+                f"PDF_INSERT_PARAMS file={path.name} "
+                f"text_len={len(header_text)} text_preview={header_text[:30]!r} "
+                f"font={font_family} size={font_size} bold={bold} italic={italic} "
+                f"rotation={rotation} "
+                f"click_ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                f"preset={self.preset_position} "
+                f"margin_x={self.cfg.get('margin_x_pt', 20.0):.1f} "
+                f"margin_y={self.cfg.get('margin_y_pt', 20.0):.1f}"
+            )
 
             for i in pages_to_process:
                 pg   = doc_out[i]
                 pg_w = pg.rect.width
                 pg_h = pg.rect.height
-                # Conversion Y : fitz (Y=0 en haut)
+                # y_pt = (1.0 - ratio_y) * pg_h → espace coords fitz (Y inversé vs tkinter)
+                # fitz_y = pg_h - y_pt → position absolue depuis le bas de la page
                 fitz_y = pg_h - y_pt
 
                 # Estimation largeur texte pour fond/cadre/soulignement
                 text_width = len(header_text) * font_size * SIZES["text_w_fallback"]  # fallback
-                if use_bg or use_frame or underline:
+                if use_bg or use_frame or underline or _LOG_PROFILE == "full":
                     try:
                         if "fontfile" in font_args:
                             font_obj = fitz.Font(fontfile=font_args["fontfile"])
@@ -1957,6 +2277,8 @@ class PDFHeaderApp:
                                      fill=None,
                                      dashes=dashes)
 
+                # half_w : min = moitié de page pour éviter troncature si texte long.
+                # L'alignement CENTER dans insert_textbox() centre le texte dans ce rect.
                 # Rect d'insertion du texte — centré sur (x_pt, fitz_y)
                 # y0 = fitz_y - half_h → insert_textbox remplit vers le bas sur font_size*lineheight
                 # → centre visuel du texte ≈ fitz_y, cohérent avec l'overlay (anchor="center")
@@ -1972,7 +2294,7 @@ class PDFHeaderApp:
                     f"fitz_y={fitz_y:.1f} text_rect={text_rect}"
                 )
 
-                pg.insert_textbox(
+                _remaining = pg.insert_textbox(
                     text_rect,
                     header_text,
                     fontsize=font_size,
@@ -1981,6 +2303,18 @@ class PDFHeaderApp:
                     lineheight=lineheight,
                     align=fitz.TEXT_ALIGN_CENTER,
                     **font_args,
+                )
+                log_pdf.debug(
+                    f"PDF_INSERT_RESULT file={path.name} page={i} "
+                    f"page_dims=({pg_w:.1f},{pg_h:.1f}) "
+                    f"x_pt={x_pt:.1f} y_pt={y_pt:.1f} fitz_y={fitz_y:.1f} "
+                    f"text_rect=[{text_rect.x0:.1f},{text_rect.y0:.1f},"
+                    f"{text_rect.x1:.1f},{text_rect.y1:.1f}] "
+                    f"text_w_est={text_width:.1f} "
+                    f"text_h_est={font_size * lineheight:.1f} "
+                    f"truncated={_remaining < 0} remaining_chars={max(0, -int(_remaining))} "
+                    f"click_ratio=({self.pos_ratio_x:.4f},{self.pos_ratio_y:.4f}) "
+                    f"applied_ratio=({x_pt / pg_w:.4f},{1 - fitz_y / pg_h:.4f})"
                 )
 
                 # Soulignement — centré sur x_pt
@@ -1995,14 +2329,21 @@ class PDFHeaderApp:
 
             doc_out.save(str(out_path), garbage=4, deflate=True)
             doc_out.close()
+            log_pdf.info(
+                f"PDF_PROCESS_OK file={path.name} "
+                f"elapsed_ms={int((time.perf_counter() - _t0_apply) * 1000)} "
+                f"out={out_path.name}"
+            )
 
         except PermissionError:
+            log_pdf.error(f"PDF_PROCESS_ERROR file={path.name} error=PermissionError")
             messagebox.showerror("Erreur",
                 "Le fichier est ouvert dans un autre programme. Fermez-le et réessayez.")
             self.file_states[self.idx] = "erreur"
             self._refresh_all_cards()
             return
         except Exception as e:
+            log_pdf.error(f"PDF_PROCESS_ERROR file={path.name} error={e}")
             messagebox.showerror("Erreur", str(e))
             self.file_states[self.idx] = "erreur"
             self._refresh_all_cards()
@@ -2069,6 +2410,9 @@ class PDFHeaderApp:
         self._load_pdf()
 
     def _skip(self):
+        """Marque le fichier courant comme ignoré (état 'passe') et passe au suivant."""
+        fname = self.pdf_files[self.idx].name if self.pdf_files else "?"
+        log_ui.info(f"PDF_SKIP file={fname} idx={self.idx}")
         self.file_states[self.idx] = "passe"
         next_idx = self._find_next_untreated()
         if next_idx is None:
@@ -2085,6 +2429,7 @@ class PDFHeaderApp:
 def main():
     print(f"PDF Header Tool version: {VERSION} (build {BUILD_ID})")
     check_update()
+    log_app.info(f"APP_LAUNCH version={VERSION} build={BUILD_ID}")
 
     pdf_files = []
     if len(sys.argv) > 1:

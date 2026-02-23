@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — ROADMAP.md
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.23.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # ==============================================================================
 
@@ -427,6 +427,52 @@ ne voient jamais les betas.
 
 ---
 
+## Étape 4.6.3 — Système de logs multi-niveaux
+**Statut : Terminé ✓**
+**Version livrée : v0.4.6.11**
+**Prérequis : Étape 4.6.2 terminée**
+
+Mise en place d'un système de logs solide avant le découpage modulaire (Étape 4.7).
+Sources consultées : recommandations Gemini + ChatGPT + analyse Claude.
+
+### Architecture
+
+**3 profils de verbosité :**
+- `simple` (prod) → INFO — démarrage, actions majeures, erreurs, check update
+- `medium` (beta/support) → DEBUG — + entrée/sortie fonctions clés, timings
+- `full` (dev) → DEBUG + stderr — + traces UI, états internes, calculs layout, PDF_INSERT_*
+
+**Défaut automatique par canal :** `release=simple`, `beta=medium`
+
+**2 fichiers de log** (dans `INSTALL_DIR`) :
+- `pdf_header_app.log` — tous niveaux selon profil, rotation 1MB × 5 backups
+- `pdf_header_errors.log` — ERROR+ toujours actif, rotation 500KB × 3 backups
+
+**6 sous-loggers par domaine** (prépare la migration vers `app/` à l'Étape 4.7) :
+- `pdf_header.app`, `.ui`, `.pdf`, `.update`, `.config`, `.font`
+
+### Changements dans pdf_header.py
+
+- `_setup_logger(profile)` + `_default_log_profile()`
+- `_log_timed(logger, label)` décorateur START/OK/FAILED + elapsed_ms
+- `_log_session_start()` : session_id, version, OS, Python, runtime, profile
+- `_global_exception_handler` : sys.excepthook → log_app.critical + messagebox
+- `_debug_log(msg, level)` conservé comme wrapper rétrocompatible (CLAUDE.md)
+- Migration config : `"debug_enabled"` (bool) → `"log_profile"` (str)
+- Events structurés `PDF_INSERT_PARAMS` + `PDF_INSERT_RESULT` (profil full)
+  → prépare la future dataclass `InsertResult` pour les tests pytest (Étape 4.9)
+- Capture retour `insert_textbox()` → `remaining_chars` (troncature détectée)
+
+### Instrumentation (par profil)
+
+| Profil | Events |
+|---|---|
+| simple | CONFIG_LOAD/SAVE, OPEN_FILES/FOLDER, PDF_OPEN, PDF_PROCESS_*, PDF_SKIP, UPDATE_* |
+| medium | + RENDER (elapsed_ms), FONT_SCAN_DONE, UPDATE_CHECK_START, timings |
+| full | + UI_CLICK, UI_FONT_CHANGE, OVERLAY_UPDATE, PDF_INSERT_PARAMS/RESULT |
+
+---
+
 ## Étape 4.7 — Découpage modulaire (multi-fichiers)
 **Statut : À faire — dépend de l'Étape 4.6.1**
 **Version cible : 0.4.7**
@@ -491,6 +537,116 @@ if __name__ == "__main__":
 - Mettre à jour la section Architecture complète avec la nouvelle arborescence
 - Supprimer la contrainte "fichier unique"
 - Documenter les méthodes clés par module
+
+### Ordre d'implémentation (sous-étapes)
+
+Chaque sous-étape doit :
+1. Vérifier syntaxe : `python3 -c "import ast; ast.parse(open('pdf_header.py').read())"`
+2. Lancer l'app sur Linux et traiter un PDF de test avant de merger
+3. Être commitée séparément pour faciliter le débogage
+
+#### Sous-étape 1 — app/constants.py
+**Risque : nul** (constantes pures, aucune logique)
+
+Créer `app/__init__.py` (vide) et `app/constants.py`.
+Déplacer depuis `pdf_header.py` :
+- `COLORS`, `SIZES`, `TIMINGS` (Étape 4.5)
+- `BUILTIN_FONTS`, `PRIORITY_FONTS`, `POSITION_PRESETS`, `PRESET_LABELS`
+- `DATE_FORMATS`, `DATE_SOURCE_DISPLAY`, `DATE_SOURCE_INTERNAL`
+- `_HIDDEN_UI_FEATURES`
+
+Dans `pdf_header.py` : remplacer par des imports ciblés explicites :
+```python
+from app.constants import (
+    COLORS, SIZES, TIMINGS,
+    BUILTIN_FONTS, PRIORITY_FONTS,
+    POSITION_PRESETS, PRESET_LABELS,
+    DATE_FORMATS, DATE_SOURCE_DISPLAY, DATE_SOURCE_INTERNAL,
+    _HIDDEN_UI_FEATURES,
+)
+```
+
+**Critère de sortie** : syntaxe OK (`ast.parse`) + lancer l'app sur Linux + traiter un PDF test.
+**Rollback** : `git revert HEAD`.
+
+#### Sous-étape 2 — app/config.py
+**Risque : faible** (I/O fichier, pas de GUI)
+
+Créer `app/config.py`.
+Déplacer depuis `pdf_header.py` :
+- `DEFAULT_CONFIG`
+- `load_config()` (avec la migration debug_enabled → log_profile)
+- `save_config(cfg)`
+
+Dans `pdf_header.py` : `from app.config import DEFAULT_CONFIG, load_config, save_config`.
+
+**Critère de sortie** : syntaxe OK + lancer l'app + charger/sauvegarder la config sans régression (vérifier `pdf_header_config.json` après modification d'un paramètre).
+**Rollback** : `git revert HEAD`.
+
+#### Sous-étape 3 — app/services/font_service.py + layout_service.py
+**Risque : faible** (fonctions pures sans dépendance GUI)
+
+Créer `app/services/__init__.py` (vide).
+`font_service.py` : `hex_to_rgb_float`, `_get_font_dirs`, `_find_priority_fonts`, `_get_fitz_font_args`
+`layout_service.py` : extraire en fonctions pures `_canvas_to_ratio`, `_ratio_to_canvas`,
+  `_ratio_to_pdf_pt`, `_recalc_ratio_from_preset` (actuellement méthodes de classe).
+
+**Critère de sortie** : syntaxe OK + lancer l'app + positionner un en-tête manuellement et via preset → vérifier que le ratio X/Y est identique avant/après extraction.
+**Rollback** : `git revert HEAD`.
+
+#### Sous-étape 4 — app/services/pdf_service.py
+**Risque : moyen** (extraction d'une partie de `_apply()`)
+
+Créer `app/services/pdf_service.py` avec une fonction pure :
+```python
+def insert_header(page, header_text, x_pt, y_pt, font_args, font_size,
+                  line_spacing, color_float, rotation, use_bg, bg_color,
+                  bg_opacity, use_frame, frame_color, frame_width, frame_style,
+                  frame_padding, frame_opacity, underline) -> int:
+    """Insère l'en-tête sur une page PyMuPDF. Retourne remaining_chars."""
+```
+`_apply()` devient un orchestrateur qui appelle `pdf_service.insert_header()`.
+
+**Critère de sortie** : syntaxe OK + traiter un PDF test → ouvrir le PDF généré et vérifier visuellement que l'en-tête est identique à avant l'extraction.
+**Rollback** : `git revert HEAD`.
+
+#### Sous-étape 5 — app/update.py + app/models.py
+**Risque : moyen** (`_apply_pending_update` doit rester disponible très tôt)
+
+`app/update.py` : `_version_gt`, `_check_update_thread`, `check_update`.
+
+**Invariant bootstrap (non-négociable)** : l'ordre d'appel dans `pdf_header.py` est strict :
+```
+_apply_pending_update()   # doit rester AVANT tout import lourd
+_bootstrap()
+import tkinter, customtkinter, PIL, fitz  # imports lourds
+```
+`_apply_pending_update()` peut être déplacée dans `app/update.py` uniquement si l'import
+de ce module ne déclenche pas lui-même un import lourd (tkinter, customtkinter, fitz) au
+niveau module. À vérifier impérativement avant de merger cette sous-étape.
+
+`app/models.py` : dataclasses préparatoires (non encore utilisées) :
+- `FontDescriptor(name, path, is_builtin)`
+- `Position(ratio_x, ratio_y, preset_key, margin_x_pt, margin_y_pt)`
+- `InsertResult(remaining_chars, truncated, text_rect, applied_ratio_x, applied_ratio_y)`
+
+**Critère de sortie** : syntaxe OK + lancer l'app + vérifier que le check_update() se déclenche au démarrage sans erreur (log `APP_START` présent dans `pdf_header_app.log`).
+**Rollback** : `git revert HEAD`.
+
+#### Sous-étape 6 — app/ui/ + allègement pdf_header.py
+**Risque : élevé** (restructuration de la classe principale)
+
+`app/ui/file_panel.py` : `_build_file_panel`, `_populate_file_panel`, `_create_file_card`,
+  `_refresh_card`, `_refresh_all_cards`, `_refresh_file_counter`.
+`app/ui/sidebar.py` : `_build_sidebar`, `_section`, tous les callbacks de la sidebar.
+`app/ui/main_window.py` : `PDFHeaderApp` (lifecycle, canvas, _apply, navigation).
+
+`pdf_header.py` allégé (~15 lignes) : bootstrap + import PDFHeaderApp + main().
+Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
+
+**Critère de sortie** : syntaxe OK sur tous les modules `app/**/*.py` + lancer l'app sur Linux + parcours complet (ouvrir des PDFs, positionner, appliquer, passer) sans régression. Vérifier `pdf_header_app.log` et `pdf_header_errors.log`.
+**Test de régression spécifique** : tester avec un PDF comportant `/Rotate` (B-002) et avec une police système (B-001) pour détecter toute régression introduite par le découpage.
+**Rollback** : `git revert HEAD` ou, si la régression touche plusieurs commits, revenir au tag de la sous-étape 5.
 
 ---
 
@@ -1008,10 +1164,11 @@ shortcuts Bureau/Menu Démarrer, associations de fichiers `.pdf`, désinstalleur
 ### Dettes techniques (avant v0.5.0)
 
 #### Comparaison de version par chaîne
-Dans `_check_update_thread()`, la comparaison `remote_version == _RUNNING_VERSION` est
-correcte pour le cas "déjà à jour". Validée jusqu'à 0.4.6.10. Si un ordre (`<`/`>`) est
-jamais introduit, utiliser `tuple(int(x) for x in v.split("."))` pour éviter la
-comparaison lexicographique (`"0.4.10" < "0.4.9"`). Non urgent actuellement.
+~~Dans `_check_update_thread()`, la comparaison `remote_version == _RUNNING_VERSION` était
+correcte pour le cas "déjà à jour". Non urgent actuellement.~~
+**Résolu (feat/multi-level-logging)** : remplacement par `_version_gt(remote, local)` (stdlib-only,
+gère X.Y.Z, X.Y.Z.W, X.Y.Z-beta.N). Empêche les downgrades (ex: remote=0.4.6.9 vs local=0.4.6.10-beta.1).
+À migrer dans `app/update.py` lors de l'Étape 4.7.
 
 #### `requires_full_reinstall: true` sans notification GUI
 Si une release nécessite une réinstallation complète, le thread abandonne silencieusement.
