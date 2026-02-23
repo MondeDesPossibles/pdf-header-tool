@@ -22,12 +22,9 @@ puis valide. Les fichiers originaux ne sont jamais modifiés.
 ```
 pdf-header-tool/          # repo git
 ├── pdf_header.py         # Script principal — toute la logique est ici
-├── install.py            # Installateur Windows legacy (non utilisé en v0.4.6+)
-├── install.bat           # Wrapper bat legacy (non utilisé en v0.4.6+)
 ├── lancer.bat            # Point d'entrée Windows portable (double-clic)
 ├── setup.bat             # Installation dépendances au premier lancement
 ├── build_dist.py         # Script de build distribution (dev-only)
-├── get-pip.py            # Bundlé localement — NON commité (voir .gitignore)
 ├── version.txt           # Numéro de version — lu par le système de MAJ
 ├── ROADMAP.md            # Évolutions prévues, à lire avant toute modification
 ├── CLAUDE.md             # Ce fichier
@@ -312,9 +309,13 @@ d'extraire ces fichiers de façon fiable depuis Linux.
 - Toujours logger avant ET après chaque opération critique
 - `python\python3XX._pth` doit avoir `import site` décommenté et `../site-packages` présent
 
-**`setup.bat` et `get-pip.py` :**
-- Conservés dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
-- Ne font PAS partie de la distribution zip (plus nécessaires depuis le bundle complet)
+**`setup.bat` :**
+- Conservé dans le repo comme outil de secours (réinstallation manuelle des deps si nécessaire)
+- Ne fait PAS partie de la distribution zip (plus nécessaire depuis le bundle complet)
+
+**`get-pip.py` :**
+- NON commité (présent dans `.gitignore`) — à récupérer manuellement si besoin
+- Ne fait PAS partie de la distribution zip
 
 ### Workflow de release (depuis v0.4.6.1)
 
