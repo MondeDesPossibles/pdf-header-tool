@@ -1,7 +1,7 @@
 # ==============================================================================
 # PDF Header Tool — pdf_header.py
 # Version : 0.4.6
-# Build   : build-2026.02.23.01
+# Build   : build-2026.02.24.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # [CODEX] Step 4.7.6 entrypoint: bootstrap + update + UI launch only
 # ==============================================================================
@@ -15,6 +15,11 @@ _RUNNING_VERSION = VERSION
 import sys
 from pathlib import Path
 
+INSTALL_DIR = Path(__file__).resolve().parent
+if str(INSTALL_DIR) not in sys.path:
+    # Garantit l'import de app.* dans le runtime Python Embedded Windows.
+    sys.path.insert(0, str(INSTALL_DIR))
+
 from app.constants import SIZES, TIMINGS
 from app.runtime import (
     bootstrap_dependencies,
@@ -26,7 +31,6 @@ from app.runtime import (
 )
 from app.update import apply_pending_update, check_update
 
-INSTALL_DIR = Path(__file__).parent
 configure_runtime(VERSION, BUILD_ID, CHANNEL, INSTALL_DIR)
 
 _new_version = apply_pending_update(INSTALL_DIR)

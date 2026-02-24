@@ -65,14 +65,15 @@ _validate_build_id_format() {
 }
 
 _validate_current_consistency() {
-    local v_file v_py b_py b_dist c_py
+    local v_file v_py b_py b_dist b_launcher c_py
     v_file="$(tr -d '[:space:]' < version.txt)"
     v_py="$(_get_var_value pdf_header.py VERSION)"
     b_py="$(_get_var_value pdf_header.py BUILD_ID)"
     c_py="$(_get_var_value pdf_header.py CHANNEL)"
     b_dist="$(sed -n 's/^BUILD_ID[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' build_dist.py | head -1)"
+    b_launcher="$(sed -n 's/^set "BUILD_ID=\(build-[0-9.]*\)"/\1/p' lancer.bat | head -1)"
 
-    if [[ -z "$v_py" || -z "$b_py" || -z "$c_py" || -z "$b_dist" ]]; then
+    if [[ -z "$v_py" || -z "$b_py" || -z "$c_py" || -z "$b_dist" || -z "$b_launcher" ]]; then
         echo "ERREUR: impossible de lire VERSION/BUILD_ID/CHANNEL dans les fichiers cibles." >&2
         exit 1
     fi
@@ -84,6 +85,11 @@ _validate_current_consistency() {
 
     if [[ "$b_py" != "$b_dist" ]]; then
         echo "ERREUR: incoherence BUILD_ID pdf_header.py ($b_py) vs build_dist.py ($b_dist)." >&2
+        exit 1
+    fi
+
+    if [[ "$b_py" != "$b_launcher" ]]; then
+        echo "ERREUR: incoherence BUILD_ID pdf_header.py ($b_py) vs lancer.bat ($b_launcher)." >&2
         exit 1
     fi
 
@@ -350,48 +356,55 @@ if [[ "$DRY_RUN" == "true" ]]; then
     echo "  - MAJ pdf_header.py VERSION/BUILD_ID/CHANNEL"
     echo "  - MAJ version.txt"
     echo "  - MAJ build_dist.py BUILD_ID"
+    echo "  - MAJ lancer.bat BUILD_ID"
     echo "  - Commit + tag + push branche ${TARGET_BRANCH} + push tag"
     echo "  - Build distribution (build_dist.py)"
     echo "  - Upload metadata/patch/full zip"
     exit 0
 fi
 
-echo "[1/9] Mise a jour VERSION/BUILD_ID/CHANNEL..."
+echo "[1/10] Mise a jour VERSION/BUILD_ID/CHANNEL..."
+sed -i "s/^# Build   :.*/# Build   : ${BUILD_ID}/" pdf_header.py
 sed -i "s/^VERSION     = .*/VERSION     = \"${VERSION}\"/" pdf_header.py
 sed -i "s/^BUILD_ID    = .*/BUILD_ID    = \"${BUILD_ID}\"/" pdf_header.py
 sed -i "s/^CHANNEL     = .*/CHANNEL     = \"${CHANNEL}\"/" pdf_header.py
 
-echo "[2/9] Mise a jour version.txt..."
+echo "[2/10] Mise a jour version.txt..."
 echo "${VERSION}" > version.txt
 
-echo "[3/9] Mise a jour BUILD_ID dans build_dist.py..."
+echo "[3/10] Mise a jour BUILD_ID dans build_dist.py..."
+sed -i "s/^# Build   :.*/# Build   : ${BUILD_ID}/" build_dist.py
 sed -i "s/^BUILD_ID *=.*/BUILD_ID = \"${BUILD_ID}\"/" build_dist.py
 
-echo "[4/9] Validation syntaxe Python..."
+echo "[4/10] Mise a jour BUILD_ID dans lancer.bat..."
+sed -i "s/^set \"BUILD_ID=.*/set \"BUILD_ID=${BUILD_ID}\"/" lancer.bat
+sed -i "s/^:: Build   :.*/:: Build   : ${BUILD_ID}/" lancer.bat
+
+echo "[5/10] Validation syntaxe Python..."
 python3 -c "import ast; ast.parse(open('pdf_header.py').read()); print('  pdf_header.py : OK')"
 python3 -c "import ast; ast.parse(open('build_dist.py').read()); print('  build_dist.py : OK')"
 
 _validate_current_consistency
 
-echo "[5/9] Commit..."
-git add pdf_header.py version.txt build_dist.py
+echo "[6/10] Commit..."
+git add pdf_header.py version.txt build_dist.py lancer.bat
 git commit -m "chore: bump version ${TAG} [${CHANNEL}]"
 
-echo "[6/9] Tag ${TAG}..."
+echo "[7/10] Tag ${TAG}..."
 git tag "${TAG}"
 
-echo "[7/9] Push origin ${TARGET_BRANCH} + ${TAG}..."
+echo "[8/10] Push origin ${TARGET_BRANCH} + ${TAG}..."
 git push origin "${TARGET_BRANCH}"
 git push origin "${TAG}"
 
-echo "[8/9] Build distribution..."
+echo "[9/10] Build distribution..."
 if [[ "$FULL_REINSTALL" == "true" ]]; then
     python3 build_dist.py --full-reinstall
 else
     python3 build_dist.py
 fi
 
-echo "[9/9] Upload assets..."
+echo "[10/10] Upload assets..."
 PATCH_ZIP="dist/app-patch-${TAG}.zip"
 FULL_ZIP=$(ls dist/PDFHeaderTool-v${VERSION}-*.zip 2>/dev/null | head -1 || true)
 METADATA="dist/metadata.json"

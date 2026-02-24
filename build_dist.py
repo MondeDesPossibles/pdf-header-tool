@@ -2,7 +2,7 @@
 # ==============================================================================
 # PDF Header Tool — build_dist.py
 # Version : 0.4.6
-# Build   : build-2026.02.21.07
+# Build   : build-2026.02.24.01
 # Repo    : MondeDesPossibles/pdf-header-tool
 # Usage   : python3 build_dist.py [--python-version 3.11.9]
 # Dev-only : ne pas inclure dans la distribution finale.

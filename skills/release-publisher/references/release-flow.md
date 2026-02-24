@@ -5,6 +5,8 @@
 - Ensure current branch is correct for release.
 - Ensure local branch is not behind remote.
 - Run package listing to review runtime + patch file set.
+- For beta bugfixes, use a dedicated branch named `fix/vX.Y.Z-beta.N`.
+- Current corrective target after `v0.4.7-beta.1`: branch `fix/v0.4.7-beta.2`.
 
 ## Dry-run first
 - Stable: `./release.sh X.Y.Z --dry-run --list-package`

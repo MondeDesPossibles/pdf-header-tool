@@ -2,7 +2,7 @@
 :: ==============================================================================
 :: PDF Header Tool - lancer.bat
 :: Version : 0.4.6
-:: Build   : build-2026.02.21.07
+:: Build   : build-2026.02.24.01
 :: Repo    : MondeDesPossibles/pdf-header-tool
 :: Point d'entree Windows pour le modele portable (Python Embarque + bundle complet)
 :: Toutes les dependances sont incluses dans la distribution — aucun internet requis.
@@ -14,7 +14,7 @@ title PDF Header Tool
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_EXE=%SCRIPT_DIR%python\python.exe"
 set "LOG_FILE=%SCRIPT_DIR%pdf_header_launch.log"
-set "BUILD_ID=build-2026.02.21.07"
+set "BUILD_ID=build-2026.02.24.01"
 
 echo [%date% %time%] Lancement PDF Header Tool > "%LOG_FILE%"
 echo [%date% %time%] Build: %BUILD_ID% >> "%LOG_FILE%"
