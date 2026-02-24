@@ -15,6 +15,10 @@ dist/python-*.zip
 tcltk/
 .claude/
 AGENT_CODING_GUIDELINES.md
+AGENT_CLAUDE.md
+AGENT_CODEX.md
+CODE_CONVENTIONS.md
+CORE_RULES.md
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
