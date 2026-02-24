@@ -6,8 +6,8 @@
 # [CODEX] Step 4.7.6 entrypoint: bootstrap + update + UI launch only
 # ==============================================================================
 
-VERSION     = "0.4.6.10-beta.1"
-BUILD_ID    = "build-2026.02.23.01"
+VERSION     = "0.4.6.10-beta.2"
+BUILD_ID    = "build-2026.02.24.01"
 GITHUB_REPO = "MondeDesPossibles/pdf-header-tool"
 CHANNEL     = "beta"
 _RUNNING_VERSION = VERSION
