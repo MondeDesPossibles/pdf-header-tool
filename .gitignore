@@ -13,9 +13,8 @@ dist/python-*.zip
 # DLLs et scripts Tcl/Tk pour la distribution Windows (binaires lourds, non versionnés)
 # Copier depuis une install Python 3.11.x Windows : tcl86t.dll, tk86t.dll, tcl/
 tcltk/
-
 .claude/
-
+AGENT_CODING_GUIDELINES.md
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
