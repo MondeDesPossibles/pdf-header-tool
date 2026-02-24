@@ -86,10 +86,13 @@ PROJECT_FILES = [
 ]
 
 # Fichiers sources inclus dans app-patch.zip (mise à jour légère)
-# À partir de v0.4.7 : ajouter les fichiers app/*.py ici
+# [CODEX] Étape 4.7.6 : inclure explicitement app/**/*.py
 PATCH_FILES = [
     "pdf_header.py",
     "version.txt",
+]
+PATCH_GLOBS = [
+    "app/**/*.py",
 ]
 
 # ---------------------------------------------------------------------------
@@ -97,6 +100,31 @@ PATCH_FILES = [
 # ---------------------------------------------------------------------------
 def _log(msg: str) -> None:
     print(f"  {msg}")
+
+
+def _iter_patch_sources():
+    """Yield (source_path, archive_name) for patch zip content."""
+    seen = set()
+
+    for rel_name in PATCH_FILES:
+        src = SCRIPT_DIR / rel_name
+        if not src.exists() or not src.is_file():
+            continue
+        arc_name = Path(rel_name).as_posix()
+        if arc_name in seen:
+            continue
+        seen.add(arc_name)
+        yield src, arc_name
+
+    for pattern in PATCH_GLOBS:
+        for src in sorted(SCRIPT_DIR.glob(pattern)):
+            if not src.is_file():
+                continue
+            arc_name = src.relative_to(SCRIPT_DIR).as_posix()
+            if arc_name in seen:
+                continue
+            seen.add(arc_name)
+            yield src, arc_name
 
 
 def _find_pip() -> list:
@@ -390,11 +418,9 @@ def build(python_version: str, full_reinstall: bool = False) -> None:
     patch_zip_path = DIST_BASE / patch_zip_name
     _log(f"Creation du patch zip : {patch_zip_name}...")
     with zipfile.ZipFile(patch_zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for fname in PATCH_FILES:
-            src = SCRIPT_DIR / fname
-            if src.exists():
-                zf.write(src, fname)
-                _log(f"  + {fname}")
+        for src, arc_name in _iter_patch_sources():
+            zf.write(src, arc_name)
+            _log(f"  + {arc_name}")
     patch_size_kb = patch_zip_path.stat().st_size / 1024
     patch_sha256 = hashlib.sha256(patch_zip_path.read_bytes()).hexdigest()
     _log(f"Patch zip cree : {patch_zip_name} ({patch_size_kb:.1f} Ko) sha256={patch_sha256[:16]}...")

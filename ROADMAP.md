@@ -1206,3 +1206,29 @@ que le package `app/` sera créé (Étape 4.7) pour inclure `app/**/*.py`.
 8. Format obligatoire du build global : `build-YYYY.MM.DD.NN` (ex: `build-2026.02.20.04`).
 9. À chaque itération, incrémenter ce build global sur `pdf_header.py`, `README.md`, `CLAUDE.md`, `ROADMAP.md`.
 10. Vérifier que ce build apparaît dans les logs runtime (`pdf_header.py`).
+
+---
+
+## [CODEX] Addendum — Execution sous-etape 6 (Etape 4.7)
+
+[CODEX ORIGINAL]
+`#### Sous-étape 6 — app/ui/ + allègement pdf_header.py`
+
+`app/ui/file_panel.py` : `_build_file_panel`, `_populate_file_panel`, `_create_file_card`,
+`_refresh_card`, `_refresh_all_cards`, `_refresh_file_counter`.
+`app/ui/sidebar.py` : `_build_sidebar`, `_section`, tous les callbacks de la sidebar.
+`app/ui/main_window.py` : `PDFHeaderApp` (lifecycle, canvas, _apply, navigation).
+
+`pdf_header.py` allégé (~15 lignes) : bootstrap + import PDFHeaderApp + main().
+Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
+
+[CODEX MODIFICATION]
+- Sous-etape 6 executee sur `feat/etape-4.7-codex`.
+- `app/ui/` cree avec : `__init__.py`, `file_panel.py`, `sidebar.py`, `main_window.py`.
+- `pdf_header.py` converti en point d'entree orchestration-only (version/build/channel, update, bootstrap, launch UI).
+- `build_dist.py` mis a jour pour inclure explicitement `app/**/*.py` dans le patch (`PATCH_GLOBS` + `_iter_patch_sources()`).
+- Handoff de reprise ajoute : `CODEX_HANDOFF_STEP_4_7_STEP6.md`.
+
+[CODEX JUSTIFICATION]
+- L'addendum preserve le texte roadmap existant et rend la difference de comportement explicite sans edition destructive.
+- La mise a jour patch est necessaire pour que l'auto-update embarque les nouveaux modules UI.

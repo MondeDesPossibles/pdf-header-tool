@@ -581,3 +581,32 @@ sys.excepthook = _global_exception_handler
 - Pour le cycle en cours, respecter la progression `0.0.1` -> `1.0.0` définie dans `ROADMAP.md`
 - Taille UI par défaut : **12 pt** — clé `ui_font_size` dans `DEFAULT_CONFIG`
 - Logs debug : toujours conserver `_debug_log()` dans le code — toggle activable via Préférences (Étape 13)
+
+---
+
+## [CODEX] Addendum — Architecture effective sous-etape 4.7.6
+
+[CODEX ORIGINAL]
+- `PDFHeaderApp` etait documentee comme classe centrale du monolithe `pdf_header.py`.
+- L'architecture cible 4.7 mentionnait `app/ui/main_window.py`, `app/ui/sidebar.py`, `app/ui/file_panel.py`.
+
+[CODEX MODIFICATION]
+- La separation UI est maintenant effective :
+  - `app/ui/file_panel.py` : panneau fichiers (cartes + compteur)
+  - `app/ui/sidebar.py` : construction sidebar + callbacks/options
+  - `app/ui/main_window.py` : `PDFHeaderApp` (lifecycle, rendu, apply/skip)
+- Nouveau module runtime ajoute pour decoupler le point d'entree :
+  - `app/runtime.py` : bootstrap dependances, setup logger, profil par canal, exception handler global
+- `pdf_header.py` est allege et limite a :
+  - constantes version/build/channel
+  - application update pending
+  - bootstrap dependances
+  - lancement `PDFHeaderApp`
+
+[CODEX JUSTIFICATION]
+- Ce decoupage permet d'aligner l'etat reel du code avec la cible 4.7 sans casser l'ordre critique update/bootstrap.
+- Le module runtime evite les imports circulaires entre entrypoint et UI tout en conservant les loggers de domaine.
+
+[CODEX]
+- Note documentaire : la reference `COMMAND.md` du prompt de reprise ne correspond pas au repo actuel.
+  Le fichier present est `COMMANDS.md`.
