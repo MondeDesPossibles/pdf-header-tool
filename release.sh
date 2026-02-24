@@ -111,6 +111,75 @@ _validate_branch_state() {
     fi
 }
 
+_validate_github_prerequisites() {
+    local origin_url repo_slug
+    origin_url="$(git remote get-url origin 2>/dev/null || true)"
+
+    if [[ -z "$origin_url" ]]; then
+        echo "ERREUR: remote 'origin' introuvable." >&2
+        exit 1
+    fi
+
+    # Le workflow release attendu repose sur SSH pour git push.
+    if ! [[ "$origin_url" =~ ^git@ ]] && ! [[ "$origin_url" =~ ^ssh:// ]]; then
+        echo "ERREUR: remote origin non configure en SSH: $origin_url" >&2
+        echo "Action: configurez une URL SSH (git@... ou ssh://...) puis relancez." >&2
+        exit 1
+    fi
+
+    if ! git ls-remote --exit-code origin HEAD >/dev/null 2>&1; then
+        echo "ERREUR: acces SSH a origin indisponible (reseau/cle/permissions)." >&2
+        echo "Action: verifiez votre cle SSH et la connectivite, puis relancez." >&2
+        exit 1
+    fi
+
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "ERREUR: gh CLI non installe. Necessaire pour marquer pre-release et uploader les assets." >&2
+        echo "Action: installez gh puis relancez." >&2
+        exit 1
+    fi
+
+    if ! gh auth status >/dev/null 2>&1; then
+        echo "ERREUR: gh CLI non authentifie." >&2
+        echo "Action: executez 'gh auth login' puis relancez." >&2
+        exit 1
+    fi
+
+    # Extraire owner/repo depuis l'URL origin pour verifier que gh cible le bon depot.
+    case "$origin_url" in
+        git@*:*/*.git)
+            repo_slug="${origin_url#*:}"
+            repo_slug="${repo_slug%.git}"
+            ;;
+        git@*:*/*)
+            repo_slug="${origin_url#*:}"
+            ;;
+        ssh://git@*/*.git)
+            repo_slug="${origin_url#ssh://git@*/}"
+            repo_slug="${repo_slug%.git}"
+            ;;
+        ssh://git@*/*)
+            repo_slug="${origin_url#ssh://git@*/}"
+            ;;
+        *)
+            echo "ERREUR: format d'URL origin non supporte: $origin_url" >&2
+            echo "Action: utilisez une URL SSH standard vers GitHub." >&2
+            exit 1
+            ;;
+    esac
+
+    if ! [[ "$repo_slug" =~ ^[^/]+/[^/]+$ ]]; then
+        echo "ERREUR: impossible d'extraire owner/repo depuis origin: $origin_url" >&2
+        exit 1
+    fi
+
+    if ! gh repo view "$repo_slug" >/dev/null 2>&1; then
+        echo "ERREUR: gh est authentifie mais n'a pas acces au depot $repo_slug." >&2
+        echo "Action: verifiez le compte actif (gh auth status) et les droits repo, puis relancez." >&2
+        exit 1
+    fi
+}
+
 # ------------------------------------------------------------------------------
 # Arguments
 # ------------------------------------------------------------------------------
@@ -207,6 +276,7 @@ _validate_current_consistency
 _validate_branch_state "$TARGET_BRANCH"
 
 if [[ "$DRY_RUN" != "true" ]]; then
+    _validate_github_prerequisites
     _require_clean_worktree
 fi
 
@@ -350,13 +420,6 @@ if command -v gh &>/dev/null; then
     else
         echo "  Aucun asset trouve dans dist/ — rien a uploader."
     fi
-else
-    echo ""
-    echo "  gh CLI non installe. Upload manuel :"
-    [[ "$BETA" == "true" ]] && echo "    gh release edit ${TAG} --prerelease"
-    [[ -f "$METADATA" ]]  && echo "    gh release upload ${TAG} ${METADATA} --clobber"
-    [[ -f "$PATCH_ZIP" ]] && echo "    gh release upload ${TAG} ${PATCH_ZIP} --clobber"
-    [[ -f "$FULL_ZIP" ]]  && echo "    gh release upload ${TAG} ${FULL_ZIP} --clobber"
 fi
 
 echo ""
