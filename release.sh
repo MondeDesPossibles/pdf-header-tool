@@ -31,7 +31,7 @@ _is_beta_version() {
 
 _usage() {
     cat <<USAGE
-Usage: ./release.sh [X.Y.Z[-beta.N]] [--full-reinstall] [--beta] [--branch <name>] [--dry-run] [--list-package]
+Usage: ./release.sh [X.Y.Z[-beta.N]] [--full-reinstall] [--beta] [--branch <name>] [--dry-run] [--list-package] [--log-file <path>]
 
 Options:
   --beta             Canal beta (pre-release)
@@ -39,6 +39,7 @@ Options:
   --branch <name>    Branche de push/tag (defaut: branche courante)
   --dry-run          Valide et affiche le plan sans modifier git/fichiers
   --list-package     Affiche la whitelist de packaging via build_dist.py --list-files
+  --log-file <path>  Ecrit aussi la sortie terminal dans un fichier log (defaut: .dev/_logs/releases/release-YYYYMMDD-HHMMSS.log)
 USAGE
 }
 
@@ -186,6 +187,27 @@ _validate_github_prerequisites() {
     fi
 }
 
+_init_release_log() {
+    local requested_log_file="${1:-}"
+    local ts default_log_file
+
+    if [[ -n "${RELEASE_SH_LOG_INITIALIZED:-}" ]]; then
+        return
+    fi
+
+    ts="$(date +%Y%m%d-%H%M%S)"
+    default_log_file="${SCRIPT_DIR}/.dev/_logs/releases/release-${ts}.log"
+    RELEASE_LOG_FILE="${requested_log_file:-$default_log_file}"
+
+    mkdir -p "$(dirname "$RELEASE_LOG_FILE")"
+    touch "$RELEASE_LOG_FILE"
+
+    # Redirige stdout/stderr vers terminal + fichier log.
+    exec > >(tee -a "$RELEASE_LOG_FILE") 2>&1
+    RELEASE_SH_LOG_INITIALIZED=1
+    echo "[LOG] release.sh log file: $RELEASE_LOG_FILE"
+}
+
 # ------------------------------------------------------------------------------
 # Arguments
 # ------------------------------------------------------------------------------
@@ -195,6 +217,7 @@ DRY_RUN=false
 LIST_PACKAGE=false
 VERSION=""
 TARGET_BRANCH=""
+LOG_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -219,6 +242,11 @@ while [[ $# -gt 0 ]]; do
             TARGET_BRANCH="$2"
             shift 2
             ;;
+        --log-file)
+            [[ $# -lt 2 ]] && { echo "ERREUR: --log-file requiert une valeur" >&2; _usage; exit 1; }
+            LOG_FILE="$2"
+            shift 2
+            ;;
         --help|-h)
             _usage
             exit 0
@@ -238,6 +266,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+_init_release_log "$LOG_FILE"
 
 if [[ -z "$TARGET_BRANCH" ]]; then
     TARGET_BRANCH="$(git branch --show-current)"
