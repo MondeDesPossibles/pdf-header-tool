@@ -1251,3 +1251,20 @@ Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
 [CODEX JUSTIFICATION]
 - Objectif: fiabiliser la production d'artefacts stable/beta tout en gardant le bundle complet
   utilisateur final + patch auto-update.
+
+---
+
+## [CODEX] Addendum — Correctif post `v0.4.7-beta.2` (fonts + tri)
+
+[CODEX MODIFICATION]
+- Mapping des polices built-in PyMuPDF corrige (Courier/Helvetica/Times + variantes gras/italique).
+- Tri naturel des PDFs applique sur:
+  - ouverture dossier,
+  - ouverture multi-fichiers,
+  - collecte CLI (argument dossier/fichiers).
+- Soulignement PDF ajuste pour se positionner sous le texte.
+
+[LIMITE CONNUE / DECISION]
+- Les polices systeme (ex: Arial) sont temporairement masquees dans l'UI.
+- Raison: support incomplet des variantes regular/bold/italic/bold-italic avec chemins TTF selon OS.
+- Evolution prevue: reintroduire les polices systeme avec resolution robuste des variantes.

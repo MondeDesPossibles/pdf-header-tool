@@ -631,3 +631,18 @@ sys.excepthook = _global_exception_handler
 [CODEX JUSTIFICATION]
 - Rend la publication stable/beta reproductible et auditable.
 - Reduit le risque de pousser la mauvaise branche ou de publier un package incoherent.
+
+---
+
+## [CODEX] Addendum — Limitations temporaires polices (post `v0.4.7-beta.2`)
+
+[CODEX MODIFICATION]
+- Le selecteur de police UI expose temporairement uniquement les polices built-in PyMuPDF:
+  `Courier`, `Helvetica`, `Times`.
+- Les polices systeme detectees (ex: Arial/Calibri/DejaVu) sont masquees pour eviter les faux positifs
+  de style (apercu OK mais rendu PDF KO).
+- Le tri des fichiers PDF est desormais naturel (`fichier_2` avant `fichier_10`) dans UI + CLI.
+
+[LIMITE CONNUE]
+- Support complet des polices systeme avec variantes TTF (`regular`, `bold`, `italic`, `bold-italic`)
+  reporte a une iteration ulterieure.

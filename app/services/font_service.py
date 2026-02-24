@@ -78,20 +78,41 @@ def _find_priority_fonts() -> dict:
 def _get_fitz_font_args(family: str, font_file, bold: bool, italic: bool) -> dict:
     """
     Retourne les kwargs de police pour insert_textbox().
-    Priorité : font_file (système) > BUILTIN_FONTS > fallback Courier.
+    Priorité : BUILTIN_FONTS > font_file (legacy) > fallback Courier.
     """
-    if font_file and Path(str(font_file)).exists():
-        return {"fontfile": str(font_file), "fontname": "F0"}
     if family in BUILTIN_FONTS:
         variants = BUILTIN_FONTS[family]
         if bold and italic:
             key = ("b", "i")
+            style = "bold+italic"
         elif bold:
             key = ("b",)
+            style = "bold"
         elif italic:
             key = ("i",)
+            style = "italic"
         else:
             key = ("r",)
-        fontname = variants.get(key) or variants.get(("r",), "cour")
+            style = "regular"
+        fontname = variants.get(key) or variants.get(("r",), "courier")
+        log_font.debug(
+            f"FONT_RESOLVE family={family} source=builtin style={style} "
+            f"fontname={fontname}"
+        )
         return {"fontname": fontname}
-    return {"fontname": "cour"}
+
+    if font_file and Path(str(font_file)).exists():
+        log_font.debug(
+            f"FONT_RESOLVE family={family} source=fontfile fontfile={font_file} "
+            "reason=family_not_builtin"
+        )
+        return {"fontfile": str(font_file), "fontname": "F0"}
+
+    if font_file:
+        log_font.warning(
+            f"FONT_RESOLVE_FALLBACK family={family} reason=font_file_missing "
+            f"fontfile={font_file}"
+        )
+    else:
+        log_font.warning(f"FONT_RESOLVE_FALLBACK family={family} reason=unknown_family")
+    return {"fontname": "courier"}

@@ -32,12 +32,12 @@ from app.runtime import (
     setup_logger as _setup_logger,
 )
 from app.services.font_service import (
-    _find_priority_fonts,
     _get_fitz_font_args,
     hex_to_rgb_float,
 )
 from app.services.layout_service import canvas_to_ratio, ratio_to_canvas, ratio_to_pdf_pt
 from app.services.pdf_service import insert_header
+from app.services.sort_service import sort_paths_natural
 from app.ui.file_panel import FilePanelMixin
 from app.ui.sidebar import SidebarMixin
 from app.update import set_staged_callback
@@ -54,7 +54,7 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
         Charge le premier PDF si passé en argument, sinon affiche l'écran d'accueil.
         """
         self.root      = root
-        self.pdf_files = list(pdf_files) if pdf_files else []
+        self.pdf_files = sort_paths_natural(list(pdf_files)) if pdf_files else []
         self.idx       = 0
         self.version   = get_version()
         self.cfg       = load_config(INSTALL_DIR)
@@ -100,9 +100,9 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
     # ---------------------------------------------------------------- Fonts ---
 
     def _load_system_fonts(self):
-        """Charge les polices système prioritaires disponibles."""
-        self._system_fonts = _find_priority_fonts()
-        log_font.debug(f"FONT_SCAN_DONE count={len(self._system_fonts)} fonts={list(self._system_fonts.keys())}")
+        """Désactive temporairement les polices système (compatibilité styles PDF)."""
+        self._system_fonts = {}
+        log_font.info("FONT_SCAN_DISABLED reason=temporary_builtin_only_policy")
 
     # ------------------------------------------------------------------ UI ---
 
@@ -297,7 +297,7 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
         )
         if not paths:
             return
-        self.pdf_files = [Path(p) for p in paths]
+        self.pdf_files = sort_paths_natural(Path(p) for p in paths)
         self.file_states = {i: "non_traite" for i in range(len(self.pdf_files))}
         self.idx = 0
         log_ui.info(f"OPEN_FILES count={len(self.pdf_files)}")
@@ -312,7 +312,7 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
         folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les PDFs")
         if not folder:
             return
-        self.pdf_files = sorted(Path(folder).glob("*.pdf"))
+        self.pdf_files = sort_paths_natural(Path(folder).glob("*.pdf"))
         if not self.pdf_files:
             messagebox.showwarning("Aucun fichier", "Aucun fichier PDF trouvé dans ce dossier.")
             return
@@ -647,6 +647,8 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
         italic      = self.var_italic.get()
         underline   = self.var_underline.get()
         font_args   = _get_fitz_font_args(font_family, font_file, bold, italic)
+        resolved_font = font_args.get("fontname", "F0")
+        resolved_source = "fontfile" if "fontfile" in font_args else "builtin"
 
         try:
             line_spacing = max(SIZES["line_spacing_min"], float(self.var_line_spacing.get()))
@@ -673,7 +675,8 @@ class PDFHeaderApp(FilePanelMixin, SidebarMixin):
         log_pdf.info(
             f"PDF_PROCESS_START file={path.name} "
             f"pages_mode={'all' if all_pages else 'first'} "
-            f"font={font_family} size={font_size} rotation={rotation}"
+            f"font={font_family} resolved_font={resolved_font} "
+            f"resolved_source={resolved_source} size={font_size} rotation={rotation}"
         )
         try:
             doc_out = fitz.open(str(path))

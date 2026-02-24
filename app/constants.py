@@ -131,9 +131,24 @@ TIMINGS = {
 # Polices PDF intégrées (built-in fitz) et polices système prioritaires
 # ---------------------------------------------------------------------------
 BUILTIN_FONTS = {
-    "Courier":   {("r",): "cour",  ("b",): "courB",  ("i",): "courI",  ("b","i"): "courBI"},
-    "Helvetica": {("r",): "helv",  ("b",): "helvB",  ("i",): "helvO",  ("b","i"): "helvBO"},
-    "Times":     {("r",): "tiro",  ("b",): "tiroB",  ("i",): "tiroI",  ("b","i"): "tiroBI"},
+    "Courier": {
+        ("r",): "courier",
+        ("b",): "courier-bold",
+        ("i",): "courier-oblique",
+        ("b", "i"): "courier-boldoblique",
+    },
+    "Helvetica": {
+        ("r",): "helvetica",
+        ("b",): "helvetica-bold",
+        ("i",): "helvetica-oblique",
+        ("b", "i"): "helvetica-boldoblique",
+    },
+    "Times": {
+        ("r",): "times-roman",
+        ("b",): "times-bold",
+        ("i",): "times-italic",
+        ("b", "i"): "times-bolditalic",
+    },
 }
 
 PRIORITY_FONTS = {

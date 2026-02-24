@@ -29,6 +29,7 @@ from app.runtime import (
     log_app,
     setup_logger,
 )
+from app.services.sort_service import sort_paths_natural
 from app.update import apply_pending_update, check_update
 
 configure_runtime(VERSION, BUILD_ID, CHANNEL, INSTALL_DIR)
@@ -52,10 +53,10 @@ def _collect_pdf_args(argv):
     for arg in argv:
         path = Path(arg)
         if path.is_dir():
-            pdf_files.extend(sorted(path.glob("*.pdf")))
+            pdf_files.extend(sort_paths_natural(path.glob("*.pdf")))
         elif path.suffix.lower() == ".pdf" and path.exists():
             pdf_files.append(path)
-    return pdf_files
+    return sort_paths_natural(pdf_files)
 
 
 def main() -> None:

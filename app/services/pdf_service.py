@@ -49,7 +49,7 @@ def insert_header(
         if "fontfile" in font_args:
             font_obj = fitz.Font(fontfile=font_args["fontfile"])
         else:
-            font_obj = fitz.Font(fontname=font_args.get("fontname", "cour"))
+            font_obj = fitz.Font(fontname=font_args.get("fontname", "courier"))
         text_width = font_obj.text_length(header_text, font_size)
     except Exception:
         pass
@@ -112,7 +112,7 @@ def insert_header(
 
     # Soulignement — centré sur x_pt
     if underline:
-        ul_y = fitz_y + font_size * SIZES["underline_offset"]
+        ul_y = fitz_y - font_size * SIZES["underline_offset"]
         page.draw_line(
             fitz.Point(x_pt - text_width / 2, ul_y),
             fitz.Point(x_pt + text_width / 2, ul_y),

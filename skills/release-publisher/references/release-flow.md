@@ -1,12 +1,14 @@
 # Release Flow (Stable/Beta)
 
 ## Preflight
+- Ensure work started on a dedicated branch before any code change.
 - Ensure clean working tree.
 - Ensure current branch is correct for release.
 - Ensure local branch is not behind remote.
 - Run package listing to review runtime + patch file set.
 - For beta bugfixes, use a dedicated branch named `fix/vX.Y.Z-beta.N`.
-- Current corrective target after `v0.4.7-beta.1`: branch `fix/v0.4.7-beta.2`.
+- If the target version is known in advance, align branch name with that target
+  (example: `fix/v0.4.7-beta.3`).
 
 ## Dry-run first
 - Stable: `./release.sh X.Y.Z --dry-run --list-package`

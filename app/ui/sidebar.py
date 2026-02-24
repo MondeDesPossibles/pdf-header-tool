@@ -188,10 +188,11 @@ class SidebarMixin:
         row_font.pack(fill="x", padx=14, pady=(6, 2))
         ctk.CTkLabel(row_font, text="Police", fg_color="transparent", text_color=COLORS["text_secondary"],
                      font=("Segoe UI", 11), width=52, anchor="w").pack(side="left")
-        all_font_names = list(BUILTIN_FONTS.keys()) + list(self._system_fonts.keys())
+        all_font_names = list(BUILTIN_FONTS.keys())
         current_family = cfg.get("font_family", "Courier")
         if current_family not in all_font_names:
             current_family = "Courier"
+            self.cfg["font_file"] = None
         self.var_font_family = tk.StringVar(value=current_family)
         opt_font = ctk.CTkOptionMenu(row_font, values=all_font_names,
                                      variable=self.var_font_family,
@@ -585,12 +586,8 @@ class SidebarMixin:
 
     def _on_font_change(self, font_name: str):
         """Met à jour cfg['font_file'] et cfg['font_family'] quand l'utilisateur change la police."""
-        if font_name in self._system_fonts:
-            self.cfg["font_file"] = str(self._system_fonts[font_name])
-            log_ui.debug(f"UI_FONT_CHANGE font={font_name} file={self.cfg['font_file']}")
-        else:
-            self.cfg["font_file"] = None
-            log_ui.debug(f"UI_FONT_CHANGE font={font_name} type=builtin")
+        self.cfg["font_file"] = None
+        log_ui.debug(f"UI_FONT_CHANGE font={font_name} type=builtin")
         self._on_text_change()
 
     # --------------------------------------------------- Couleurs (picks) ---
