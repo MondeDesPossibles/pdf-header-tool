@@ -224,3 +224,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Step 4.7 working prompts/handoff (local-only)
+claude-code-step-6-thinking.md
+CODEX_HANDOFF_STEP_4_7_STEP6.md
+prompt_codex_ultra_strict_v2.md
