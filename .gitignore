@@ -14,11 +14,8 @@ dist/python-*.zip
 # Copier depuis une install Python 3.11.x Windows : tcl86t.dll, tk86t.dll, tcl/
 tcltk/
 .claude/
-AGENT_CODING_GUIDELINES.md
 AGENT_CLAUDE.md
-AGENT_CODEX.md
-CODE_CONVENTIONS.md
-CORE_RULES.md
+docs/agent-rules/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF Header Maintainer"
+  short_description: "Maintain the PDF Header Tool safely (roadmap-aware)."
+  default_prompt: "Maintain this repository by following ROADMAP.md and CLAUDE.md, with strict scope control, safe git workflow, and reproducible validation."

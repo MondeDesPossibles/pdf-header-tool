@@ -610,3 +610,24 @@ sys.excepthook = _global_exception_handler
 [CODEX]
 - Note documentaire : la reference `COMMAND.md` du prompt de reprise ne correspond pas au repo actuel.
   Le fichier present est `COMMANDS.md`.
+
+---
+
+## [CODEX] Addendum — Release flow stable/beta (scripts)
+
+[CODEX ORIGINAL]
+- `release.sh` poussait historiquement `main` + tag.
+- `build_dist.py` copiait des fichiers projet via une liste simple.
+
+[CODEX MODIFICATION]
+- `release.sh` supporte maintenant:
+  - `--branch <name>` (defaut: branche courante)
+  - `--dry-run` (validation sans mutation)
+  - `--list-package` (affichage whitelist packaging)
+  - validations explicites de coherence version/build + etat de branche.
+- `build_dist.py` expose une whitelist runtime explicite (`RUNTIME_FILES`, `RUNTIME_GLOBS`) et
+  un mode `--list-files` pour inspection sans build.
+
+[CODEX JUSTIFICATION]
+- Rend la publication stable/beta reproductible et auditable.
+- Reduit le risque de pousser la mauvaise branche ou de publier un package incoherent.

@@ -78,11 +78,14 @@ SCRIPT_DIR     = Path(__file__).parent
 DIST_BASE      = SCRIPT_DIR / "dist"
 TCLTK_LOCAL    = SCRIPT_DIR / "tcltk"   # dossier local (non versionne, voir .gitignore)
 
-# Fichiers du projet à copier dans la distribution
-PROJECT_FILES = [
+# Whitelist runtime explicite (artefact utilisateur final)
+RUNTIME_FILES = [
     "pdf_header.py",
     "version.txt",
     "lancer.bat",
+]
+RUNTIME_GLOBS = [
+    "app/**/*.py",
 ]
 
 # Fichiers sources inclus dans app-patch.zip (mise à jour légère)
@@ -100,6 +103,31 @@ PATCH_GLOBS = [
 # ---------------------------------------------------------------------------
 def _log(msg: str) -> None:
     print(f"  {msg}")
+
+
+def _iter_runtime_sources():
+    """Yield (source_path, archive_name) for runtime distribution content."""
+    seen = set()
+
+    for rel_name in RUNTIME_FILES:
+        src = SCRIPT_DIR / rel_name
+        if not src.exists() or not src.is_file():
+            continue
+        arc_name = Path(rel_name).as_posix()
+        if arc_name in seen:
+            continue
+        seen.add(arc_name)
+        yield src, arc_name
+
+    for pattern in RUNTIME_GLOBS:
+        for src in sorted(SCRIPT_DIR.glob(pattern)):
+            if not src.is_file():
+                continue
+            arc_name = src.relative_to(SCRIPT_DIR).as_posix()
+            if arc_name in seen:
+                continue
+            seen.add(arc_name)
+            yield src, arc_name
 
 
 def _iter_patch_sources():
@@ -125,6 +153,25 @@ def _iter_patch_sources():
                 continue
             seen.add(arc_name)
             yield src, arc_name
+
+
+def list_files() -> None:
+    """Affiche les fichiers whitelistes pour runtime zip et patch zip."""
+    runtime_entries = [arc_name for _, arc_name in _iter_runtime_sources()]
+    patch_entries = [arc_name for _, arc_name in _iter_patch_sources()]
+
+    print("=== Runtime whitelist (zip complet) ===")
+    for entry in runtime_entries:
+        print(entry)
+
+    print("")
+    print("=== Patch whitelist (app-patch) ===")
+    for entry in patch_entries:
+        print(entry)
+
+    print("")
+    print(f"Runtime files: {len(runtime_entries)}")
+    print(f"Patch files  : {len(patch_entries)}")
 
 
 def _find_pip() -> list:
@@ -292,7 +339,11 @@ def _extract_tcltk(nuget_zip_path: Path, python_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Build principal
 # ---------------------------------------------------------------------------
-def build(python_version: str, full_reinstall: bool = False) -> None:
+def build(python_version: str, full_reinstall: bool = False, list_files_only: bool = False) -> None:
+    if list_files_only:
+        list_files()
+        return
+
     # Lire la version du projet depuis version.txt
     version_file = SCRIPT_DIR / "version.txt"
     if version_file.exists():
@@ -387,20 +438,25 @@ def build(python_version: str, full_reinstall: bool = False) -> None:
         sys.exit(1)
     _log(f"Dependances installees dans site-packages/ ({sum(1 for _ in site_pkg_dir.rglob('*') if _.is_file())} fichiers)")
 
-    # 9. Copie des fichiers du projet
+    # 9. Copie des fichiers runtime (whitelist explicite)
     missing = []
-    for fname in PROJECT_FILES:
-        src = SCRIPT_DIR / fname
-        if src.exists():
-            shutil.copy2(src, dist_dir / fname)
-            _log(f"Copie : {fname}")
-        else:
-            missing.append(fname)
-            print(f"  AVERTISSEMENT : {fname} introuvable — ignore", file=sys.stderr)
+    copied = 0
+    for src, arc_name in _iter_runtime_sources():
+        dst = dist_dir / arc_name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        copied += 1
+        _log(f"Copie : {arc_name}")
+
+    for rel_name in RUNTIME_FILES:
+        if not (SCRIPT_DIR / rel_name).exists():
+            missing.append(rel_name)
+            print(f"  AVERTISSEMENT : {rel_name} introuvable — ignore", file=sys.stderr)
 
     if missing:
         print(f"\n  Fichiers manquants : {', '.join(missing)}", file=sys.stderr)
         print("  La distribution peut être incomplète.\n", file=sys.stderr)
+    _log(f"Fichiers runtime copies: {copied}")
 
     # 10. Creation du zip final
     _log(f"Creation du zip : {zip_path.name}...")
@@ -470,5 +526,11 @@ if __name__ == "__main__":
         default=False,
         help="Marquer requires_full_reinstall=true dans metadata.json (si site-packages/ ou python/ changent)",
     )
+    parser.add_argument(
+        "--list-files",
+        action="store_true",
+        default=False,
+        help="Afficher la whitelist runtime/patch sans lancer de build",
+    )
     args = parser.parse_args()
-    build(args.python_version, full_reinstall=args.full_reinstall)
+    build(args.python_version, full_reinstall=args.full_reinstall, list_files_only=args.list_files)

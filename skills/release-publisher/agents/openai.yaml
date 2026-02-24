@@ -1,0 +1,4 @@
+interface:
+  display_name: "Release Publisher"
+  short_description: "Publish stable and beta releases safely with strict checks."
+  default_prompt: "Prepare and validate stable/beta releases using release.sh and build_dist.py with dry-run, consistency checks, whitelist packaging, and rollback-safe steps."

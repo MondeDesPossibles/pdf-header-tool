@@ -1232,3 +1232,22 @@ Mettre à jour `PATCH_FILES` dans `build_dist.py` pour inclure `app/**/*.py`.
 [CODEX JUSTIFICATION]
 - L'addendum preserve le texte roadmap existant et rend la difference de comportement explicite sans edition destructive.
 - La mise a jour patch est necessaire pour que l'auto-update embarque les nouveaux modules UI.
+
+---
+
+## [CODEX] Addendum — Publication release stable/beta
+
+[CODEX ORIGINAL]
+- Release pilotee par `release.sh` avec build local et upload assets.
+
+[CODEX MODIFICATION]
+- Workflow release renforce:
+  - preflight coherence version/build
+  - validation branche cible
+  - mode `--dry-run`
+  - inspection packaging `--list-package` / `build_dist.py --list-files`
+- Packaging runtime formalise via whitelist explicite dans `build_dist.py`.
+
+[CODEX JUSTIFICATION]
+- Objectif: fiabiliser la production d'artefacts stable/beta tout en gardant le bundle complet
+  utilisateur final + patch auto-update.
